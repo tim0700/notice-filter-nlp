@@ -440,5 +440,40 @@ def test_send_batch_partial_failure_preserves_already_sent_ids(tmp_path: Path) -
         with pytest.raises(RuntimeError, match="transient send error"):
             asyncio.run(client.send_batch(batch, on_sent=recorded.append))
 
+    assert "ok_first" in "".join(recorded)
     assert recorded == ["ok_first"]
     mock_discord.close.assert_awaited_once()
+
+
+def test_format_notice_message_and_batch_with_key_info_slots(tmp_path: Path) -> None:
+    notice = _make_notice(id="slot_1")
+    base_payload = format_notice_message(notice, score=0.85, summary="핵심 요약", key_info={})
+    assert len(base_payload["fields"]) == 3
+
+    slotted_payload = format_notice_message(
+        notice,
+        score=0.90,
+        summary="핵심 요약",
+        key_info={
+            "schedule": "2026. 11. 01. ~ 11. 20.",
+            "target": "소프트웨어융합학과 4학년",
+            "benefit": "장학금 200만원",
+            "location": "",
+        },
+    )
+    assert len(slotted_payload["fields"]) == 4
+    slot_field = slotted_payload["fields"][3]
+    assert slot_field["name"] == "📋 핵심 정보"
+    assert slot_field["inline"] is False
+    assert "📅 일정/기한: 2026. 11. 01. ~ 11. 20." in slot_field["value"]
+    assert "👥 대상: 소프트웨어융합학과 4학년" in slot_field["value"]
+    assert "💰 지원/혜택: 장학금 200만원" in slot_field["value"]
+    assert "📍 장소" not in slot_field["value"]
+
+    client = NoticeDiscordClient(channel_id=123456, feedback_csv=tmp_path / "fb.csv", dry_run=True)
+    sent = asyncio.run(
+        client.send_batch([(notice, 0.90, "핵심 요약", {"schedule": "11/20까지", "location": "판교"})])
+    )
+    assert len(sent) == 1
+    assert len(sent[0]["fields"]) == 4
+    assert "📍 장소: 판교" in sent[0]["fields"][3]["value"]

@@ -21,7 +21,11 @@ from src.schema import FeedbackRecord, NoticeRecord
 
 logger = logging.getLogger(__name__)
 
-NoticeBatchItem = tuple[NoticeRecord, float] | tuple[NoticeRecord, float, str]
+NoticeBatchItem = (
+    tuple[NoticeRecord, float]
+    | tuple[NoticeRecord, float, str]
+    | tuple[NoticeRecord, float, str, dict[str, str] | None]
+)
 
 
 def append_feedback(feedback_csv: str | Path, record: FeedbackRecord) -> None:
@@ -55,15 +59,18 @@ def load_feedback_df(feedback_csv: str | Path) -> pd.DataFrame:
     return ordered
 
 
-def _unpack_batch_item(item: NoticeBatchItem) -> tuple[NoticeRecord, float, str]:
-    """Normalize a 2-tuple or 3-tuple batch item into (notice, score, summary)."""
+def _unpack_batch_item(item: NoticeBatchItem) -> tuple[NoticeRecord, float, str, dict[str, str] | None]:
+    """Normalize a 2-, 3-, or 4-tuple batch item into (notice, score, summary, key_info)."""
     if len(item) == 2:
         notice, score = item
-        return notice, float(score), ""
+        return notice, float(score), "", None
     if len(item) == 3:
         notice, score, summary = item
-        return notice, float(score), summary
-    raise ValueError(f"Expected 2-tuple or 3-tuple batch item, got length {len(item)}")
+        return notice, float(score), summary, None
+    if len(item) == 4:
+        notice, score, summary, key_info = item
+        return notice, float(score), summary, key_info
+    raise ValueError(f"Expected 2-tuple, 3-tuple, or 4-tuple batch item, got length {len(item)}")
 
 
 class NoticeFeedbackView(discord.ui.View):
@@ -303,11 +310,12 @@ class NoticeDiscordClient:
         score: float,
         summary: str = "",
         *,
+        key_info: dict[str, str] | None = None,
         channel: Any | None = None,
         persistent: bool = False,
     ) -> dict[str, Any]:
         """Send a formatted notice embed with feedback buttons or record it in dry-run mode."""
-        payload = format_notice_message(notice, score=score, summary=summary)
+        payload = format_notice_message(notice, score=score, summary=summary, key_info=key_info)
         entry: dict[str, Any] = {
             **payload,
             "channel_id": self.channel_id,
@@ -330,7 +338,7 @@ class NoticeDiscordClient:
             self.sent_messages.append(entry)
             return entry
 
-        results = await self.send_batch([(notice, score, summary)])
+        results = await self.send_batch([(notice, score, summary, key_info)])
         return results[0]
 
     async def send_batch(
@@ -339,15 +347,15 @@ class NoticeDiscordClient:
         *,
         on_sent: Callable[[str], None] | None = None,
     ) -> list[dict[str, Any]]:
-        """Send a batch of (notice, score[, summary]) items over one Discord client session."""
+        """Send a batch of (notice, score[, summary[, key_info]]) items over one Discord client session."""
         if not items:
             return []
 
         unpacked = [_unpack_batch_item(item) for item in items]
         if self.dry_run:
             results: list[dict[str, Any]] = []
-            for notice, score, summary in unpacked:
-                entry = await self.send_notice(notice, score, summary)
+            for notice, score, summary, key_info in unpacked:
+                entry = await self.send_notice(notice, score, summary, key_info=key_info)
                 results.append(entry)
                 if on_sent is not None:
                     on_sent(notice.id)
@@ -361,8 +369,14 @@ class NoticeDiscordClient:
             channel = client.get_channel(self.channel_id)
             if channel is None:
                 channel = await client.fetch_channel(self.channel_id)
-            for notice, score, summary in unpacked:
-                entry = await self.send_notice(notice, score, summary, channel=channel)
+            for notice, score, summary, key_info in unpacked:
+                entry = await self.send_notice(
+                    notice,
+                    score,
+                    summary,
+                    key_info=key_info,
+                    channel=channel,
+                )
                 results.append(entry)
                 if on_sent is not None:
                     await asyncio.to_thread(on_sent, notice.id)
@@ -401,11 +415,12 @@ class NoticeDiscordClient:
                     return
 
                 dispatched_count = 0
-                for notice, score, summary in unpacked:
+                for notice, score, summary, key_info in unpacked:
                     await self.send_notice(
                         notice,
                         score,
                         summary,
+                        key_info=key_info,
                         channel=channel,
                         persistent=True,
                     )

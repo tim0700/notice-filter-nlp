@@ -24,8 +24,9 @@ from src.collectors import collect_all
 from src.config import CANONICAL_COLUMNS, load_env, load_profile
 from src.models import (
     EmbeddingLogRegScorer,
-    PreprocessedTextRankSummarizer,
+    SemanticMMRTextRankSummarizer,
     SentenceEmbedder,
+    extract_notice_slots,
     extract_texts_from_df,
 )
 from src.schema import NoticeRecord, normalize_notices_df
@@ -209,7 +210,7 @@ def run_alert_cycle(
     input_csv: str | Path | None = None,
     embedder: Any | None = None,
     collect_fn: Callable[..., pd.DataFrame] | None = None,
-) -> list[tuple[NoticeRecord, float, str]]:
+) -> list[tuple[NoticeRecord, float, str, dict[str, str] | None]]:
     """Collect fresh notices, score unseen items, summarize positives, and free model RAM."""
     if input_csv is not None:
         fresh_df = normalize_notices_df(pd.read_csv(Path(input_csv), encoding="utf-8"))
@@ -264,12 +265,21 @@ def run_alert_cycle(
         if max_alerts_per_run > 0:
             positives = positives.head(max_alerts_per_run)
 
-        summarizer = PreprocessedTextRankSummarizer(top_k=3, min_sentences=5)
-        batch: list[tuple[NoticeRecord, float, str]] = []
+        summarizer = SemanticMMRTextRankSummarizer(
+            embedder=active_embedder,
+            top_k=3,
+            min_sentences=5,
+        )
+        batch: list[tuple[NoticeRecord, float, str, dict[str, str] | None]] = []
         for _, row in positives.iterrows():
             notice = _row_to_notice(row)
-            summary = summarizer.summarize(notice.content) if notice.content else ""
-            batch.append((notice, float(row["_score"]), summary))
+            summary = summarizer.summarize(notice.content, title=notice.title) if notice.content else ""
+            key_info = (
+                extract_notice_slots(notice.content, deadline=notice.deadline)
+                if notice.content
+                else {}
+            )
+            batch.append((notice, float(row["_score"]), summary, key_info or None))
         return batch
     finally:
         if hasattr(active_embedder, "unload"):
@@ -323,7 +333,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Seeded {added} notice ID(s) into {args.state_file} from {args.seed_seen_from}.")
         return 0
 
-    def _cycle() -> list[tuple[NoticeRecord, float, str]]:
+    def _cycle() -> list[tuple[NoticeRecord, float, str, dict[str, str] | None]]:
         return run_alert_cycle(
             sources=args.sources,
             limit_per_source=args.limit_per_source,
@@ -376,7 +386,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     mode_lbl = "LIVE" if args.live else "DRY-RUN"
     print(f"[{mode_lbl}] Dispatched {len(batch)} notice(s):")
-    for notice, score, summary in batch:
+    for notice, score, summary, _key_info in batch:
         preview = (summary or notice.title)[:90].replace("\n", " ")
         print(f"  - [{notice.source}] ({score:.2%}) {notice.title} | {preview}")
     return 0

@@ -9,7 +9,12 @@ from src.models.scorer import (
     TfidfLogRegScorer,
     extract_texts_from_df,
 )
-from src.models.summarizer import PreprocessedTextRankSummarizer, TextRankSummarizer
+from src.models.summarizer import (
+    PreprocessedTextRankSummarizer,
+    SemanticMMRTextRankSummarizer,
+    TextRankSummarizer,
+    extract_notice_slots,
+)
 
 __all__ = [
     "CosineProfileScorer",
@@ -17,8 +22,10 @@ __all__ = [
     "NoticeScorer",
     "PreprocessedTextRankSummarizer",
     "RocchioScorer",
+    "SemanticMMRTextRankSummarizer",
     "SentenceEmbedder",
     "TextRankSummarizer",
     "TfidfLogRegScorer",
+    "extract_notice_slots",
     "extract_texts_from_df",
 ]

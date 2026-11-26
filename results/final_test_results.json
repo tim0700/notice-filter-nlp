@@ -281,12 +281,12 @@
   "rouge_eval": {
     "count": 20,
     "space": {
-      "rouge1": 0.371309687711691,
-      "rougeL": 0.36481260159866286
+      "rouge1": 0.47210273463756847,
+      "rougeL": 0.46380725474989726
     },
     "okt": {
-      "rouge1": 0.4386540424372051,
-      "rougeL": 0.40489977669982863
+      "rouge1": 0.5220695955912368,
+      "rougeL": 0.5040463629022821
     },
     "raw_textrank": {
       "space": {
@@ -300,17 +300,39 @@
     },
     "preprocessed_textrank": {
       "space": {
-        "rouge1": 0.371309687711691,
-        "rougeL": 0.36481260159866286
+        "rouge1": 0.35391324835769017,
+        "rougeL": 0.3380170677894666
       },
       "okt": {
-        "rouge1": 0.4386540424372051,
-        "rougeL": 0.40489977669982863
+        "rouge1": 0.42463789901890464,
+        "rougeL": 0.3788866683762542
       }
     },
-    "delta_space_rouge_1": 0.012,
-    "delta_space_rouge_l": 0.0166,
-    "delta_okt_rouge_1": 0.0154,
-    "delta_okt_rouge_l": 0.0247
+    "semantic_mmr_textrank": {
+      "space": {
+        "rouge1": 0.47210273463756847,
+        "rougeL": 0.46380725474989726
+      },
+      "okt": {
+        "rouge1": 0.5220695955912368,
+        "rougeL": 0.5040463629022821
+      }
+    },
+    "delta_prep_vs_raw_space_rouge_1": -0.0054,
+    "delta_prep_vs_raw_space_rouge_l": -0.0102,
+    "delta_prep_vs_raw_okt_rouge_1": 0.0014,
+    "delta_prep_vs_raw_okt_rouge_l": -0.0014,
+    "delta_sem_vs_raw_space_rouge_1": 0.1128,
+    "delta_sem_vs_raw_space_rouge_l": 0.1156,
+    "delta_sem_vs_raw_okt_rouge_1": 0.0989,
+    "delta_sem_vs_raw_okt_rouge_l": 0.1238,
+    "slot_extraction_coverage": {
+      "total": 20,
+      "any_slot": 20,
+      "schedule": 20,
+      "target": 6,
+      "benefit": 5,
+      "location": 2
+    }
   }
 }

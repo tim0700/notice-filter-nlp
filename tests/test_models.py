@@ -16,9 +16,11 @@ from src.models import (
     EmbeddingLogRegScorer,
     PreprocessedTextRankSummarizer,
     RocchioScorer,
+    SemanticMMRTextRankSummarizer,
     SentenceEmbedder,
     TextRankSummarizer,
     TfidfLogRegScorer,
+    extract_notice_slots,
 )
 from src.models.scorer import extract_texts_from_df
 
@@ -456,3 +458,78 @@ def test_preprocessed_textrank_filters_checklist_and_splits_structure() -> None:
     assert "문숙장학재단 신규장학생" in sparse_out
     assert "성적증명서 1부" not in sparse_out
     assert "납부확인서 1부" not in sparse_out
+
+
+def test_semantic_mmr_textrank_and_preprocessing_hygiene() -> None:
+    embedder = FakeDomainEmbedder()
+    sem = SemanticMMRTextRankSummarizer(embedder=embedder, top_k=3, min_sentences=4)
+
+    assert sem.summarize("", title="빈 공지") == ""
+
+    short_notice = "첫 번째 안내입니다. 두 번째 안내입니다."
+    assert sem.summarize(short_notice, title="짧은 공지") == short_notice
+
+    # Deduplication + email particle cleanup + empty parens + platform disclaimer removal + * bullets
+    noisy_notice = (
+        "*** 해당 사업은 성남 청년정보 플랫폼이 아닌, 아래 적힌 메일(sncrowd@snyouth.or.kr)에 직접 접수해 주세요. "
+        "성남 청년정보 플랫폼에서 신청하신 건은 접수되지 않습니다. *** "
+        "* 제출기한: ~07/01(수) 15시 * 제출방법: 이메일(contact@snyouth.or.kr로) 서류 제출 "
+        "* 제출서류: 1) 성적증명서 1부 2) 재학증명서 1부 "
+        "성남시 AI 백엔드 인턴십 교육생을 모집합니다. "
+        "성남시 AI 백엔드 인턴십 교육생을 모집합니다. "
+        "선발된 청년에게는 개발 프로젝트 멘토링과 200만원을 지원합니다. "
+        "국제캠퍼스 소프트웨어융합학과 4학년 및 성남 거주 청년 모두 지원 가능합니다. "
+        "기타 참고사항 안내입니다."
+    )
+    out = sem.summarize(noisy_notice, title="성남시 AI 백엔드 인턴십 모집")
+    assert ".kr로" not in out
+    assert "()" not in out and "( )" not in out
+    assert "성남 청년정보 플랫폼" not in out
+    assert "성적증명서 1부" not in out
+    assert out.count("성남시 AI 백엔드 인턴십 교육생을 모집합니다.") <= 1
+    assert "제출기한" in out or "200만원을 지원합니다" in out
+
+    # Verify MMR avoids near-duplicate candidate sentences when diverse alternatives exist
+    dup_heavy_notice = (
+        "AI 백엔드 신입 개발자 인턴십 채용 안내입니다. "
+        "AI 백엔드 신입 개발자 인턴십 모집 공고입니다. "
+        "AI 백엔드 신입 개발자 인턴 채용 안내문입니다. "
+        "성남시 분당구 판교 오피스에서 주 5일 근무하며 장학 지원금을 제공합니다. "
+        "소프트웨어융합학과 4학년 졸업예정자도 지원 가능합니다. "
+        "전형일정은 서류접수 후 코딩테스트 및 면접 순입니다."
+    )
+    mmr_out = sem.summarize(dup_heavy_notice, title="AI 백엔드 신입 개발자 인턴십")
+    mmr_sents = sem.extract_candidates(mmr_out)
+    assert len(mmr_sents) == 3
+    # Should pick diverse topics (AI + 성남/지원금 + 학과/졸업) rather than 3 identical AI lines
+    assert any("성남시 분당구" in s or "소프트웨어융합학과" in s for s in mmr_sents)
+
+
+def test_extract_notice_slots_structured_fields() -> None:
+    notice_body = (
+        "[모집개요] "
+        "■ 모집기간 : 2026. 10. 30.(금) ~ 11. 22.(일) "
+        "■ 모집대상 : 성남시 거주 청년(19~39세) "
+        "■ 총 시상금: 400만 원 / 대상 100만 원 "
+        "■ 운영장소 : 판교유스센터 1층 공연장 "
+        "문의 : 031-729-9063"
+    )
+    slots = extract_notice_slots(notice_body, deadline="2026-11-22")
+    assert slots["schedule"] == "2026. 10. 30.(금) ~ 11. 22.(일)"
+    assert slots["target"] == "성남시 거주 청년(19~39세)"
+    assert "400만 원" in slots["benefit"]
+    assert slots["location"] == "판교유스센터 1층 공연장"
+
+    inline_body = (
+        "일시 : 2026년 10월 26일(월) 19:00~21:00 "
+        "장소 : 야탑유스센터 "
+        "대상 : 청년(만 19세~39세) "
+        "문의 : 031-729-9832"
+    )
+    inline_slots = extract_notice_slots(inline_body)
+    assert inline_slots["schedule"] == "2026년 10월 26일(월) 19:00~21:00"
+    assert inline_slots["location"] == "야탑유스센터"
+    assert inline_slots["target"] == "청년(만 19세~39세)"
+
+    fallback_slots = extract_notice_slots("별도 양식 없는 일반 안내 본문입니다.", deadline="2026-12-31")
+    assert fallback_slots == {"schedule": "2026-12-31"}

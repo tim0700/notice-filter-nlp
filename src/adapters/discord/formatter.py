@@ -141,6 +141,26 @@ def _format_summary_description(
     return body_text
 
 
+_SLOT_LABELS: tuple[tuple[str, str], ...] = (
+    ("schedule", "📅 일정/기한"),
+    ("target", "👥 대상"),
+    ("benefit", "💰 지원/혜택"),
+    ("location", "📍 장소"),
+)
+
+
+def format_key_info_slots(key_info: dict[str, str] | None) -> str:
+    """Format extracted notice slots into concise labeled lines, omitting empty values."""
+    if not key_info:
+        return ""
+    lines: list[str] = []
+    for key, label in _SLOT_LABELS:
+        val = _WHITESPACE_RE.sub(" ", str(key_info.get(key, "") or "")).strip()
+        if val:
+            lines.append(f"{label}: {val}")
+    return "\n".join(lines)
+
+
 def _parse_color(raw_color: int | str | None) -> int | None:
     """Normalize an integer or hex color string into an integer color value."""
     if raw_color is None:
@@ -157,6 +177,8 @@ def format_notice_message(
     notice: NoticeRecord,
     score: float,
     summary: str = "",
+    *,
+    key_info: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a polished Discord embed payload dictionary for a filtered notice."""
     raw_description = summary.strip() or notice.content.strip() or notice.title
@@ -179,17 +201,28 @@ def format_notice_message(
         EMBED_FOOTER_MAX_LEN,
     )
 
+    fields: list[dict[str, Any]] = [
+        {"name": "📌 출처", "value": source_value, "inline": True},
+        {"name": "🎯 적합도", "value": score_value, "inline": True},
+        {"name": "⏰ 마감일", "value": deadline_value, "inline": True},
+    ]
+    slot_text = format_key_info_slots(key_info)
+    if slot_text:
+        fields.append(
+            {
+                "name": "📋 핵심 정보",
+                "value": _truncate_text(slot_text, EMBED_FIELD_VALUE_MAX_LEN),
+                "inline": False,
+            }
+        )
+
     return {
         "author": {"name": author_name},
         "title": title,
         "url": notice.url,
         "description": description,
         "color": score_to_color(float(score)),
-        "fields": [
-            {"name": "📌 출처", "value": source_value, "inline": True},
-            {"name": "🎯 적합도", "value": score_value, "inline": True},
-            {"name": "⏰ 마감일", "value": deadline_value, "inline": True},
-        ],
+        "fields": fields,
         "footer": {"text": footer_text},
     }
 

@@ -36,7 +36,12 @@ from src.models.scorer import (
     TfidfLogRegScorer,
     extract_texts_from_df,
 )
-from src.models.summarizer import PreprocessedTextRankSummarizer, TextRankSummarizer
+from src.models.summarizer import (
+    PreprocessedTextRankSummarizer,
+    SemanticMMRTextRankSummarizer,
+    TextRankSummarizer,
+    extract_notice_slots,
+)
 
 
 class LookupEmbedder:
@@ -419,27 +424,50 @@ def run_final_eval() -> dict[str, Any]:
         s_merged = s_eval.merge(s_gold[["id", "human_summary"]], on="id", how="inner")
         raw_summarizer = TextRankSummarizer(top_k=3, min_sentences=5)
         prep_summarizer = PreprocessedTextRankSummarizer(top_k=3, min_sentences=5)
+        sem_summarizer = SemanticMMRTextRankSummarizer(embedder=base_emb, top_k=3, min_sentences=5)
 
         contents = [str(t) for t in s_merged["content"].fillna("")]
+        titles = [str(t) for t in s_merged["title"].fillna("")]
+        deadlines = [str(d) for d in s_merged["deadline"].fillna("")]
+        refs = [str(r) for r in s_merged["human_summary"].fillna("")]
+
         raw_preds = [raw_summarizer.summarize(t) for t in contents]
         prep_preds = [prep_summarizer.summarize(t) for t in contents]
-        refs = [str(r) for r in s_merged["human_summary"].fillna("")]
+        sem_preds = [sem_summarizer.summarize(t, title=ttl) for t, ttl in zip(contents, titles)]
+        slot_dicts = [extract_notice_slots(t, deadline=dl) for t, dl in zip(contents, deadlines)]
 
         raw_space = evaluate_korean_rouge(refs, raw_preds, tokenizer="space")
         raw_okt = evaluate_korean_rouge(refs, raw_preds, tokenizer="okt")
         prep_space = evaluate_korean_rouge(refs, prep_preds, tokenizer="space")
         prep_okt = evaluate_korean_rouge(refs, prep_preds, tokenizer="okt")
+        sem_space = evaluate_korean_rouge(refs, sem_preds, tokenizer="space")
+        sem_okt = evaluate_korean_rouge(refs, sem_preds, tokenizer="okt")
+
+        slot_coverage = {
+            "total": len(slot_dicts),
+            "any_slot": sum(1 for s in slot_dicts if s),
+            "schedule": sum(1 for s in slot_dicts if "schedule" in s),
+            "target": sum(1 for s in slot_dicts if "target" in s),
+            "benefit": sum(1 for s in slot_dicts if "benefit" in s),
+            "location": sum(1 for s in slot_dicts if "location" in s),
+        }
 
         rouge_results = {
             "count": len(s_merged),
-            "space": prep_space,
-            "okt": prep_okt,
+            "space": sem_space,
+            "okt": sem_okt,
             "raw_textrank": {"space": raw_space, "okt": raw_okt},
             "preprocessed_textrank": {"space": prep_space, "okt": prep_okt},
-            "delta_space_rouge_1": round(prep_space["rouge1"] - raw_space["rouge1"], 4),
-            "delta_space_rouge_l": round(prep_space["rougeL"] - raw_space["rougeL"], 4),
-            "delta_okt_rouge_1": round(prep_okt["rouge1"] - raw_okt["rouge1"], 4),
-            "delta_okt_rouge_l": round(prep_okt["rougeL"] - raw_okt["rougeL"], 4),
+            "semantic_mmr_textrank": {"space": sem_space, "okt": sem_okt},
+            "delta_prep_vs_raw_space_rouge_1": round(prep_space["rouge1"] - raw_space["rouge1"], 4),
+            "delta_prep_vs_raw_space_rouge_l": round(prep_space["rougeL"] - raw_space["rougeL"], 4),
+            "delta_prep_vs_raw_okt_rouge_1": round(prep_okt["rouge1"] - raw_okt["rouge1"], 4),
+            "delta_prep_vs_raw_okt_rouge_l": round(prep_okt["rougeL"] - raw_okt["rougeL"], 4),
+            "delta_sem_vs_raw_space_rouge_1": round(sem_space["rouge1"] - raw_space["rouge1"], 4),
+            "delta_sem_vs_raw_space_rouge_l": round(sem_space["rougeL"] - raw_space["rougeL"], 4),
+            "delta_sem_vs_raw_okt_rouge_1": round(sem_okt["rouge1"] - raw_okt["rouge1"], 4),
+            "delta_sem_vs_raw_okt_rouge_l": round(sem_okt["rougeL"] - raw_okt["rougeL"], 4),
+            "slot_extraction_coverage": slot_coverage,
         }
 
         comp_df = pd.DataFrame(
@@ -450,14 +478,19 @@ def run_final_eval() -> dict[str, Any]:
                 "human_summary": refs,
                 "raw_textrank": raw_preds,
                 "preprocessed_textrank": prep_preds,
+                "semantic_mmr_textrank": sem_preds,
+                "extracted_slots": [json.dumps(s, ensure_ascii=False) for s in slot_dicts],
             }
         )
         comp_df.to_csv(_REPO_ROOT / "results" / "summary_eval_comparison.csv", index=False, encoding="utf-8")
 
-    # Figures 06-08
+    # Figures 06-09
     fig_dir = _REPO_ROOT / "results" / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
-    sns.set_theme(style="whitegrid", font="Malgun Gothic")
+    if sys.platform == "win32":
+        sns.set_theme(style="whitegrid", font="Malgun Gothic")
+    else:
+        sns.set_theme(style="whitegrid")
     plt.rcParams["axes.unicode_minus"] = False
 
     # 06: Experiment F1 comparison
@@ -501,6 +534,32 @@ def run_final_eval() -> dict[str, Any]:
     plt.tight_layout()
     fig.savefig(fig_dir / "08_feedback_learning_curve.png", dpi=150)
     plt.close(fig)
+
+    # 09: Summarizer ROUGE Comparison
+    if rouge_results:
+        fig, ax = plt.subplots(figsize=(9.5, 4.6))
+        metric_labels = ["Space ROUGE-1", "Space ROUGE-L", "Okt ROUGE-1", "Okt ROUGE-L"]
+        raw_vals = [raw_space["rouge1"], raw_space["rougeL"], raw_okt["rouge1"], raw_okt["rougeL"]]
+        prep_vals = [prep_space["rouge1"], prep_space["rougeL"], prep_okt["rouge1"], prep_okt["rougeL"]]
+        sem_vals = [sem_space["rouge1"], sem_space["rougeL"], sem_okt["rouge1"], sem_okt["rougeL"]]
+        x = np.arange(len(metric_labels))
+        w = 0.25
+        bars_raw = ax.bar(x - w, raw_vals, width=w, label="Raw TextRank", color="#94A3B8")
+        bars_prep = ax.bar(x, prep_vals, width=w, label="PreprocessedTextRank", color="#3B82F6")
+        bars_sem = ax.bar(x + w, sem_vals, width=w, label="SemanticMMRTextRank", color="#10B981")
+        for bar_group in (bars_raw, bars_prep, bars_sem):
+            for bar in bar_group:
+                val = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width() / 2, val + 0.008, f"{val:.3f}", ha="center", va="bottom", fontsize=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels(metric_labels)
+        ax.set_ylim(0, max(*raw_vals, *prep_vals, *sem_vals) + 0.12)
+        ax.set_ylabel("F1 Score")
+        ax.set_title("한국어 추출 요약기 3종 ROUGE 비교 (Summary Gold n=20)")
+        ax.legend()
+        plt.tight_layout()
+        fig.savefig(fig_dir / "09_summary_rouge_comparison.png", dpi=150)
+        plt.close(fig)
 
     summary = {
         "judge_agreement_on_test150": judge_agreement,

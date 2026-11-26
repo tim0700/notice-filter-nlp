@@ -14,7 +14,7 @@
      - Baseline (`Exp 0`): `jhgan/ko-sroberta-multitask` 프로필-공지 코사인 유사도 (`title@0.45`)
      - 단계적 개선: 입력 텍스트 구성·부정 감점·임계값 튜닝(`Exp 1`) → 소량 피드백 `Rocchio` 벡터 보정(`Exp 2`) → 누적 피드백 분류(`TF-IDF + LogReg` `Exp 3a` vs `ko-sroberta + LogReg` `Exp 3b`)
      - 최신 NLP 비교 (`Exp 4a~4c`): `nlpai-lab/KURE-v1` (1024d) vs `ko-sroberta` (768d) 1:1 통제 비교
-  3. **구조 인식 추출 요약 및 한국어 ROUGE 평가**: `TextRank` (Raw Baseline) vs `PreprocessedTextRankSummarizer` (개조식 분리·제출서류 보일러플레이트 제거·핵심키워드 가중치) + 커스텀 한국어 `ROUGE-1 / ROUGE-L` (공백·Okt 형태소 기준)
+  3. **구조 인식·임베딩 기반 추출 요약 및 핵심 정보 슬롯**: `TextRank` (Raw) → `PreprocessedTextRank` → **`SemanticMMRTextRankSummarizer`** (`ko-sroberta` 임베딩 그래프 + 공지 제목 유사도 + MMR 중복 제거) + 구조화 핵심 정보 슬롯(`extract_notice_slots` → Discord `📋 핵심 정보` 필드) + 커스텀 한국어 `ROUGE-1 / ROUGE-L` (공백·Okt)
 
 ---
 
@@ -31,7 +31,8 @@
 | 공지 선별 (`n=150`) | **`Exp 3b` (`ko-sroberta + LogReg`)** | **F1 `0.8250` / Acc `0.8133`** | **전체 최고 성능 (`+0.1489 F1`)** |
 | 공지 선별 (`n=150`) | `Exp 4c` (`KURE-v1 + LogReg`) | F1 `0.8125` / Acc `0.8000` | 1024d 최신 모델 비교군 |
 | 추출 요약 (`n=20`) | `TextRank` (Raw Baseline) | Okt ROUGE-1 `0.4232` / ROUGE-L `0.3802` | 공백 ROUGE-L `0.3482` |
-| 추출 요약 (`n=20`) | **`PreprocessedTextRankSummarizer`** | **Okt ROUGE-1 `0.4387` / ROUGE-L `0.4049`** | **공백 ROUGE-L `0.3648` (`+0.0247` Okt)** |
+| 추출 요약 (`n=20`) | `PreprocessedTextRank` | Okt ROUGE-1 `0.4246` / ROUGE-L `0.3789` | 공백 ROUGE-L `0.3380` (구조 분절 TF-IDF 한계 확인) |
+| 추출 요약 (`n=20`) | **`SemanticMMRTextRankSummarizer`** | **Okt ROUGE-1 `0.5221` / ROUGE-L `0.5040`** | **공백 ROUGE-L `0.4638` (`+0.1238` Okt), 슬롯 `20/20`** |
 
 상세 실험 표·학습 곡선·Jira `버그` 연동 오류 분석은 [04_Experiment_and_Error_Report.md](docs/04_Experiment_and_Error_Report.md)를 참고하세요.
 
@@ -62,10 +63,10 @@ notice-filter-nlp/
 │   ├── schema.py                 # 9컬럼 NoticeRecord & 5컬럼 FeedbackRecord 계약
 │   ├── collectors/               # 데이터 수집 어댑터 (swcon, goodjob, seongnam, youth_api)
 │   ├── preprocess/               # 한국어 정제, Okt 토크나이저, 불용어, TF-IDF, WordCloud
-│   ├── models/                   # SentenceEmbedder(+unload), Scorer 계층, Raw & Preprocessed TextRank
+│   ├── models/                   # SentenceEmbedder(+unload), Scorer 계층, SemanticMMR TextRank & Slots
 │   ├── eval/                     # 분류 지표(F1), 한국어 ROUGE, Judge 일치율, 층화 분할
-│   └── adapters/discord/         # Discord Embed 알림 및 영속 버튼 피드백(feedback.csv) 데몬 어댑터
-├── tests/                        # 오프라인 계약 및 단위 테스트 (50 tests)
+│   └── adapters/discord/         # Discord Embed 알림(핵심 정보 슬롯) 및 영속 버튼 피드백(feedback.csv) 데몬 어댑터
+├── tests/                        # 오프라인 계약 및 단위 테스트 (53 tests)
 ├── .env.example
 ├── pyproject.toml
 └── requirements.txt

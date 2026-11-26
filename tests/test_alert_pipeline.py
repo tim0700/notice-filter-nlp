@@ -177,9 +177,13 @@ def test_run_alert_cycle_deduplicates_summarizes_and_unloads(tmp_path: Path) -> 
     )
 
     assert spy_embedder.unloaded is True
-    assert [notice.id for notice, _, _ in batch] == ["fresh_pos"]
-    _, score, summary = batch[0]
+    assert [notice.id for notice, _, _, _ in batch] == ["fresh_pos"]
+    _, score, summary, key_info = batch[0]
     assert score >= 0.50
     assert "성적증명서 1부" not in summary
     assert "031-123-4567" not in summary
     assert "200만원을 지원합니다" in summary or "장학금 선발 안내" in summary
+    assert key_info is not None
+    assert key_info["schedule"] == "12월 5일까지 온라인 접수입니다."
+    assert "성적 우수 학생" in key_info["target"]
+    assert "200만원" in key_info["benefit"]

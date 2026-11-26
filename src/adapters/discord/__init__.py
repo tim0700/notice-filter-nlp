@@ -12,6 +12,7 @@ from src.adapters.discord.bot import (
 )
 from src.adapters.discord.formatter import (
     build_discord_embed,
+    format_key_info_slots,
     format_notice_message,
 )
 
@@ -22,6 +23,7 @@ __all__ = [
     "build_discord_embed",
     "build_persistent_notice_view",
     "compute_next_delay_seconds",
+    "format_key_info_slots",
     "format_notice_message",
     "handle_persistent_feedback_interaction",
     "load_feedback_df",

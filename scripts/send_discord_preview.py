@@ -16,8 +16,14 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.adapters.discord import NoticeDiscordClient
-from src.config import load_env
-from src.models.summarizer import PreprocessedTextRankSummarizer, TextRankSummarizer
+from src.config import load_env, load_profile
+from src.models.embedder import SentenceEmbedder
+from src.models.summarizer import (
+    PreprocessedTextRankSummarizer,
+    SemanticMMRTextRankSummarizer,
+    TextRankSummarizer,
+    extract_notice_slots,
+)
 from src.schema import NoticeRecord, normalize_notices_df
 
 
@@ -50,9 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--summarizer",
-        choices=["raw", "preprocessed"],
-        default="preprocessed",
-        help="Which summarizer output to attach to Discord embeds (default: preprocessed).",
+        choices=["raw", "preprocessed", "semantic_mmr"],
+        default="semantic_mmr",
+        help="Which summarizer output to attach to Discord embeds (default: semantic_mmr).",
     )
     parser.add_argument(
         "--score",
@@ -96,31 +102,46 @@ def main(argv: Sequence[str] | None = None) -> int:
             subset = normalized[normalized["content"].str.len() > 0]
         subset = subset.head(max(0, args.limit))
 
+    profile = load_profile()
+    embedder = SentenceEmbedder(model_name=str(profile["models"]["baseline_embedding"]))
     raw_summarizer = TextRankSummarizer(top_k=3, min_sentences=5)
     prep_summarizer = PreprocessedTextRankSummarizer(top_k=3, min_sentences=5)
+    sem_summarizer = SemanticMMRTextRankSummarizer(embedder=embedder, top_k=3, min_sentences=5)
 
     batch = []
-    for _, row in subset.iterrows():
-        notice = NoticeRecord(
-            id=row["id"],
-            source=row["source"],
-            category=row["category"],
-            title=row["title"],
-            meta_tags=row["meta_tags"],
-            posted_at=row["posted_at"],
-            url=row["url"],
-            content=row["content"],
-            deadline=row["deadline"],
-        )
-        raw_sum = raw_summarizer.summarize(notice.content)
-        prep_sum = prep_summarizer.summarize(notice.content)
-        chosen_sum = prep_sum if args.summarizer == "preprocessed" else raw_sum
+    try:
+        for _, row in subset.iterrows():
+            notice = NoticeRecord(
+                id=row["id"],
+                source=row["source"],
+                category=row["category"],
+                title=row["title"],
+                meta_tags=row["meta_tags"],
+                posted_at=row["posted_at"],
+                url=row["url"],
+                content=row["content"],
+                deadline=row["deadline"],
+            )
+            raw_sum = raw_summarizer.summarize(notice.content)
+            prep_sum = prep_summarizer.summarize(notice.content)
+            sem_sum = sem_summarizer.summarize(notice.content, title=notice.title)
+            slots = extract_notice_slots(notice.content, deadline=notice.deadline)
+            if args.summarizer == "semantic_mmr":
+                chosen_sum = sem_sum
+            elif args.summarizer == "preprocessed":
+                chosen_sum = prep_sum
+            else:
+                chosen_sum = raw_sum
 
-        print(f"=== [{notice.source}] {notice.title} ({notice.id}) ===")
-        print(f"[RAW TextRank]          {raw_sum}")
-        print(f"[PREPROCESSED TextRank] {prep_sum}")
-        print()
-        batch.append((notice, float(args.score), chosen_sum))
+            print(f"=== [{notice.source}] {notice.title} ({notice.id}) ===")
+            print(f"[RAW TextRank]          {raw_sum}")
+            print(f"[PREPROCESSED TextRank] {prep_sum}")
+            print(f"[SEMANTIC+MMR TextRank] {sem_sum}")
+            print(f"[KEY SLOTS]             {slots}")
+            print()
+            batch.append((notice, float(args.score), chosen_sum, slots or None))
+    finally:
+        embedder.unload()
 
     dry_run = not args.live
     raw_channel = (

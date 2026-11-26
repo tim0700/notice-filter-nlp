@@ -73,3 +73,17 @@
   3. 실운영 추론 경로는 `KoNLPy/Java` 없는 경량 의존성(`deploy/requirements-serve.txt`)으로 분리하고, 매 주기 추론 종료 직후 `SentenceEmbedder.unload()`로 모델 가중치를 메모리에서 해제한다.
   4. Oracle Cloud(Ubuntu ARM64, `Linger=yes`)에서는 root 권한 없이 격리된 사용자 단위 `systemd --user` 서비스(`notice-filter.service`)로 운영해 기존 서버 서비스와의 간섭을 원천 차단한다.
 - **결과**: 기존 서버 환경에 무영향으로 24시간 실시간 피드백 수집 + 매일 09:00 KST 자동 공지 알림이 상시 동작한다.
+
+---
+
+## ADR-07: 임베딩 기반 SemanticMMRTextRank 요약 및 구조화 핵심 슬롯 추출 채택
+
+- **상태**: 채택됨 (Phase 3 요약 고도화)
+- **배경**: `PreprocessedTextRankSummarizer`는 어휘 일치(`TF-IDF`) 기반 그래프를 사용하므로 조사·표현 차이가 큰 한국어 원자적 불릿 간 유사도 연결이 약하고, 동일 의미 문장 중복 선택 및 공지 제목 주제 반영 부재, 이메일+조사(`.kr로`) 잔여물 등의 한계가 존재함.
+- **대안 검토**:
+  - `KoBART` 등 생성 요약(Abstractive) 모델은 ~500MB 추가 메모리 적재가 필요하고 마감일·지원금액 등 숫자 환각(Hallucination) 위험이 있으며 Oracle ARM64 CPU 지연이 큼.
+- **결정**:
+  1. 분류에 이미 메모리에 로드된 `ko-sroberta-multitask` 임베딩을 재사용해 코사인 유사도 PageRank + 공지 `title` 유사도(`title_weight=0.25`) + **MMR**(`mmr_lambda=0.70`)로 중복 없이 핵심 문장을 선택하는 `SemanticMMRTextRankSummarizer`를 도입한다.
+  2. 이메일+조사/빈 괄호/플랫폼 안내 배너/`* `·`- ` 인라인 불릿 정제 및 중복 문장 제거를 보강한다.
+  3. 실사용 가독성을 위해 규칙 기반 `extract_notice_slots()`로 `일정/기한 · 대상 · 지원/혜택 · 장소` 슬롯을 추출해 Discord 임베드 `📋 핵심 정보` 필드로 선택 표기한다(미전달 시 기존 3필드 계약 유지).
+- **결과**: 추가 모델 용량/RAM 0 증가, 숫자 환각 0%를 유지한 채 20건 Human Summary Gold 기준 **Okt ROUGE-L `0.3802 → 0.5040` (`+0.1238`)**, **Space ROUGE-L `0.3482 → 0.4638` (`+0.1156`)** 및 `20/20` 슬롯 커버리지를 달성함.
