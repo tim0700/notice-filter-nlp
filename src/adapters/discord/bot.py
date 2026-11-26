@@ -336,6 +336,8 @@ class NoticeDiscordClient:
     async def send_batch(
         self,
         items: Sequence[NoticeBatchItem],
+        *,
+        on_sent: Callable[[str], None] | None = None,
     ) -> list[dict[str, Any]]:
         """Send a batch of (notice, score[, summary]) items over one Discord client session."""
         if not items:
@@ -343,23 +345,27 @@ class NoticeDiscordClient:
 
         unpacked = [_unpack_batch_item(item) for item in items]
         if self.dry_run:
-            return [
-                await self.send_notice(notice, score, summary)
-                for notice, score, summary in unpacked
-            ]
+            results: list[dict[str, Any]] = []
+            for notice, score, summary in unpacked:
+                entry = await self.send_notice(notice, score, summary)
+                results.append(entry)
+                if on_sent is not None:
+                    on_sent(notice.id)
+            return results
 
         token = self._resolve_token()
         client = self._create_discord_client()
-        results: list[dict[str, Any]] = []
+        results = []
         try:
             await client.login(token)
             channel = client.get_channel(self.channel_id)
             if channel is None:
                 channel = await client.fetch_channel(self.channel_id)
             for notice, score, summary in unpacked:
-                results.append(
-                    await self.send_notice(notice, score, summary, channel=channel)
-                )
+                entry = await self.send_notice(notice, score, summary, channel=channel)
+                results.append(entry)
+                if on_sent is not None:
+                    await asyncio.to_thread(on_sent, notice.id)
         finally:
             await client.close()
 
@@ -381,6 +387,8 @@ class NoticeDiscordClient:
 
         token = self._resolve_token()
         tz = _resolve_timezone(timezone_name)
+        # Validate schedule syntax upfront before connecting to Discord Gateway.
+        compute_next_delay_seconds(datetime.now(tz), daily_at=daily_at, interval_minutes=interval_minutes)
         client = self._create_discord_client()
         scheduler_task: asyncio.Task[None] | None = None
 
@@ -392,7 +400,7 @@ class NoticeDiscordClient:
                     logger.info("Scheduled cycle: no new notices above threshold.")
                     return
 
-                dispatched_ids: list[str] = []
+                dispatched_count = 0
                 for notice, score, summary in unpacked:
                     await self.send_notice(
                         notice,
@@ -401,11 +409,11 @@ class NoticeDiscordClient:
                         channel=channel,
                         persistent=True,
                     )
-                    dispatched_ids.append(notice.id)
+                    dispatched_count += 1
+                    if on_dispatched is not None:
+                        await asyncio.to_thread(on_dispatched, [notice.id])
 
-                if on_dispatched is not None and dispatched_ids:
-                    await asyncio.to_thread(on_dispatched, dispatched_ids)
-                logger.info("Scheduled cycle: dispatched %d notice(s).", len(dispatched_ids))
+                logger.info("Scheduled cycle: dispatched %d notice(s).", dispatched_count)
             except Exception:
                 logger.exception("Scheduled notice cycle failed; will retry at next interval.")
 

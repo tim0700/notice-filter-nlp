@@ -653,3 +653,47 @@ def test_runner_collect_all_resilience_dedup_and_cli(tmp_path: Path, monkeypatch
     cli_df = pd.read_csv(cli_out, encoding="utf-8", keep_default_na=False)
     assert len(cli_df) == 1
     assert cli_df.loc[0, "id"] == "shared_1"
+
+
+def test_seongnam_preserves_target_and_youth_api_masks_key_in_logs(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.collectors import SeongnamYouthCollector, YouthApiCollector
+
+    seongnam = SeongnamYouthCollector(delay_seconds=0)
+    item = {
+        "title": "청년 자격증 지원",
+        "businessSeq": "999",
+        "target": "성남 거주 만 19~34세 미취업자",
+        "businessDescription": "교육비 100만원 지원",
+    }
+    rec = seongnam._parse_business_item(item)
+    assert rec is not None
+    assert "성남 거주 만 19~34세 미취업자" in rec.content
+    assert "교육비 100만원 지원" in rec.content
+
+    dedup_item = {
+        "title": "청년 자격증 지원",
+        "businessSeq": "1000",
+        "target": "성남시 청년",
+        "businessDescription": "성남시 청년 대상 응시료 지원",
+    }
+    rec_dedup = seongnam._parse_business_item(dedup_item)
+    assert rec_dedup is not None
+    assert rec_dedup.content == "성남시 청년 대상 응시료 지원"
+
+    monkeypatch.setenv("YOUTH_POLICY_API_KEY", "SECRET_KEY_VALUE_123")
+    monkeypatch.delenv("YOUTH_CONTENT_API_KEY", raising=False)
+    youth = YouthApiCollector(delay_seconds=0)
+
+    def _raise_with_key(url: str, params=None):
+        raise requests.HTTPError(
+            f"500 Server Error for url: {url}?apiKeyNm=SECRET_KEY_VALUE_123&pageNum=1"
+        )
+
+    monkeypatch.setattr(youth, "_request", _raise_with_key)
+    with caplog.at_level("WARNING"):
+        assert youth.fetch(limit=5) == []
+    assert "SECRET_KEY_VALUE_123" not in caplog.text
+    assert "apiKeyNm=***" in caplog.text

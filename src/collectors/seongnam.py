@@ -295,8 +295,12 @@ class SeongnamYouthCollector(BaseCollector):
         else:
             desc = clean_whitespace(raw_desc)
         target = clean_whitespace(str(item.get("target") or ""))
-        content_parts = [p for p in (target, desc) if p and p != target[:len(p)]]
-        content = clean_whitespace(" ".join(content_parts)) if desc != target else desc
+        content_parts: list[str] = []
+        if target and target not in desc:
+            content_parts.append(target)
+        if desc:
+            content_parts.append(desc)
+        content = clean_whitespace(" ".join(content_parts))
 
         posted_at = normalize_date(str(item.get("announceStartDate") or item.get("registDt") or ""))
         deadline = normalize_date(str(item.get("endDate") or ""))

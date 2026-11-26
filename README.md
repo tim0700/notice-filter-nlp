@@ -31,7 +31,7 @@
 | 공지 선별 (`n=150`) | **`Exp 3b` (`ko-sroberta + LogReg`)** | **F1 `0.8250` / Acc `0.8133`** | **전체 최고 성능 (`+0.1489 F1`)** |
 | 공지 선별 (`n=150`) | `Exp 4c` (`KURE-v1 + LogReg`) | F1 `0.8125` / Acc `0.8000` | 1024d 최신 모델 비교군 |
 | 추출 요약 (`n=20`) | `TextRank` (Raw Baseline) | Okt ROUGE-1 `0.4232` / ROUGE-L `0.3802` | 공백 ROUGE-L `0.3482` |
-| 추출 요약 (`n=20`) | **`PreprocessedTextRankSummarizer`** | **Okt ROUGE-1 `0.4494` / ROUGE-L `0.4173`** | **공백 ROUGE-L `0.3808` (`+0.0370` Okt)** |
+| 추출 요약 (`n=20`) | **`PreprocessedTextRankSummarizer`** | **Okt ROUGE-1 `0.4387` / ROUGE-L `0.4049`** | **공백 ROUGE-L `0.3648` (`+0.0247` Okt)** |
 
 상세 실험 표·학습 곡선·Jira `버그` 연동 오류 분석은 [04_Experiment_and_Error_Report.md](docs/04_Experiment_and_Error_Report.md)를 참고하세요.
 
@@ -65,7 +65,7 @@ notice-filter-nlp/
 │   ├── models/                   # SentenceEmbedder(+unload), Scorer 계층, Raw & Preprocessed TextRank
 │   ├── eval/                     # 분류 지표(F1), 한국어 ROUGE, Judge 일치율, 층화 분할
 │   └── adapters/discord/         # Discord Embed 알림 및 영속 버튼 피드백(feedback.csv) 데몬 어댑터
-├── tests/                        # 오프라인 계약 및 단위 테스트 (48 tests)
+├── tests/                        # 오프라인 계약 및 단위 테스트 (50 tests)
 ├── .env.example
 ├── pyproject.toml
 └── requirements.txt

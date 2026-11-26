@@ -27,13 +27,16 @@ _DOC_SECTION_HEADER_RE = re.compile(
     r"^(?:제출\s*서류|구비\s*서류|신청\s*서류|첨부\s*서류|유의\s*사항|참고\s*사항|문의\s*처|문의|연락처)$"
 )
 
+_TRAILING_CONTACT_RE = re.compile(
+    r"(?:주최\s*[:：].*?(?=문의)|문의\s*[:：]|문의처\s*[:：]?|담당자\s*[:：]|연락처\s*[:：]|☎|📞).*$"
+)
+_PHONE_NUMBER_RE = re.compile(r"\(?\b0\d{1,2}[-.\s]\d{3,4}[-.\s]\d{4}\b\)?")
 _BOILERPLATE_RE = re.compile(
     r"(?:"
     r"제출\s*서류|구비\s*서류|각\s*\d+\s*부|\d+\s*부\b|"
     r"성적\s*증명서|재학\s*증명서|납부\s*확인서|자격\s*확인|자격득실\s*확인서|"
     r"주민등록\s*등본|가족관계\s*증명서|개인정보.{0,8}동의서|소정\s*양식|건강보험증\s*사본|"
     r"별첨|첨부\s*파일|붙임\s*\d*|"
-    r"문의\s*[:：]|문의처|담당자\s*[:：]|연락처\s*[:：]|\b0\d{1,2}-\d{3,4}-\d{4}\b|"
     r"참고하시기\s*바랍니다|협조하여\s*주시기\s*바랍니다|"
     r"많은\s*관심\s*부탁|많은\s*참여\s*바랍니다|별도\s*문의를\s*하지\s*않도록"
     r")"
@@ -186,7 +189,9 @@ class PreprocessedTextRankSummarizer(TextRankSummarizer):
                 continue
 
             for segment in _SENTENCE_SPLIT_RE.split(line):
-                cleaned = self._clean_segment(segment)
+                stripped_contact = _TRAILING_CONTACT_RE.sub(" ", segment)
+                stripped_contact = _PHONE_NUMBER_RE.sub(" ", stripped_contact)
+                cleaned = self._clean_segment(stripped_contact)
                 if not cleaned or len(cleaned) < 8 or _PURE_INDEX_RE.match(cleaned):
                     continue
                 is_bp = self._is_boilerplate(cleaned, in_doc_section=in_doc_section)
@@ -195,7 +200,7 @@ class PreprocessedTextRankSummarizer(TextRankSummarizer):
         return results
 
     def extract_candidates(self, text: str) -> list[str]:
-        """Return cleaned non-boilerplate sentences with fallback to all cleaned sentences."""
+        """Return cleaned non-boilerplate sentences with fallback only when none remain."""
         tagged = self.preprocess_and_split(text)
         if not tagged:
             return []
@@ -205,7 +210,7 @@ class PreprocessedTextRankSummarizer(TextRankSummarizer):
             return all_cleaned
 
         filtered = [sent for sent, is_bp in tagged if not is_bp]
-        if len(filtered) >= self.top_k:
+        if filtered:
             return filtered
         return all_cleaned
 

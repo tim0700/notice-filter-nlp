@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any
 
 import defusedxml.ElementTree as ET
@@ -25,6 +26,14 @@ from src.config import load_env
 from src.schema import NoticeRecord
 
 logger = logging.getLogger(__name__)
+
+
+_API_KEY_MASK_RE = re.compile(r"(apiKeyNm=)[^&\s'\"]+")
+
+
+def _mask_api_key(text: str) -> str:
+    """Redact YouthCenter API keys before logging URLs or request exception strings."""
+    return _API_KEY_MASK_RE.sub(r"\1***", str(text))
 
 
 def _first_non_empty(item: dict[str, str], keys: tuple[str, ...]) -> str:
@@ -253,7 +262,11 @@ class YouthApiCollector(BaseCollector):
             try:
                 response = self._request(endpoint_url, params=params)
             except requests.RequestException as exc:
-                logger.warning("Youth API request failed (%s): %s", endpoint_url, exc)
+                logger.warning(
+                    "Youth API request failed (%s): %s",
+                    endpoint_url,
+                    _mask_api_key(str(exc)),
+                )
                 break
 
             content_type = response.headers.get("Content-Type", "")

@@ -432,3 +432,27 @@ def test_preprocessed_textrank_filters_checklist_and_splits_structure() -> None:
     for content in sample_df["content"].fillna(""):
         if str(content).strip():
             assert prep.summarize(str(content)).strip() != ""
+
+    # H3: preserve core schedule/target/location when trailing '문의:' is appended on the same line
+    inline_contact = (
+        "일시: 2026년 5월 1일 장소: 야탑유스센터 대상: 성남시 청년 문의: 031-729-4419 "
+        "주요내용: AI 취업 멘토링을 무료로 제공합니다. "
+        "신청기간: 2026. 4. 10.까지 온라인 접수입니다."
+    )
+    inline_out = prep.summarize(inline_contact)
+    assert "야탑유스센터" in inline_out
+    assert "031-729-4419" not in inline_out
+
+    # H2: when non-boilerplate sentences < top_k (but >= 1), do not resurrect document checklist lines
+    sparse_notice = (
+        "2026-2학기 문숙장학재단 신규장학생을 선발합니다. "
+        "[제출서류] "
+        "1) 지원 신청서 및 추천서 1부 "
+        "2) 직전학기 성적증명서 1부 "
+        "3) 건강보험료 납부확인서 1부 "
+        "4) 주민등록등본 1부"
+    )
+    sparse_out = prep.summarize(sparse_notice)
+    assert "문숙장학재단 신규장학생" in sparse_out
+    assert "성적증명서 1부" not in sparse_out
+    assert "납부확인서 1부" not in sparse_out

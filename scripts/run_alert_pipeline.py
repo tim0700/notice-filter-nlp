@@ -367,9 +367,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         feedback_csv=args.feedback_csv,
         dry_run=dry_run,
     )
-    asyncio.run(client.send_batch(batch))
-    if not dry_run:
-        mark_sent_ids(args.state_file, [n.id for n, _, _ in batch])
+    asyncio.run(
+        client.send_batch(
+            batch,
+            on_sent=(None if dry_run else lambda nid: mark_sent_ids(args.state_file, [nid])),
+        )
+    )
 
     mode_lbl = "LIVE" if args.live else "DRY-RUN"
     print(f"[{mode_lbl}] Dispatched {len(batch)} notice(s):")

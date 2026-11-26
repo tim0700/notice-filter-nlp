@@ -416,3 +416,29 @@ def test_persistent_feedback_helpers_and_scheduler_timing(tmp_path: Path) -> Non
     saved = load_feedback_df(feedback_csv)
     assert saved["notice_id"].tolist() == ["swcon_academic_100"]
     assert saved["label"].tolist() == [1]
+
+
+def test_send_batch_partial_failure_preserves_already_sent_ids(tmp_path: Path) -> None:
+    mock_channel = MagicMock()
+    mock_channel.send = AsyncMock(side_effect=[None, RuntimeError("transient send error")])
+
+    mock_discord = MagicMock()
+    mock_discord.login = AsyncMock()
+    mock_discord.get_channel = MagicMock(return_value=mock_channel)
+    mock_discord.close = AsyncMock()
+
+    client = NoticeDiscordClient(
+        channel_id=111222,
+        feedback_csv=tmp_path / "feedback.csv",
+        token="fake-token",
+        dry_run=False,
+    )
+    recorded: list[str] = []
+    batch = [(_make_notice(id="ok_first"), 0.9, "요약1"), (_make_notice(id="fail_second"), 0.8, "요약2")]
+
+    with patch("src.adapters.discord.bot.discord.Client", return_value=mock_discord):
+        with pytest.raises(RuntimeError, match="transient send error"):
+            asyncio.run(client.send_batch(batch, on_sent=recorded.append))
+
+    assert recorded == ["ok_first"]
+    mock_discord.close.assert_awaited_once()

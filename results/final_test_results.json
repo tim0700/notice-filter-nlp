@@ -281,12 +281,12 @@
   "rouge_eval": {
     "count": 20,
     "space": {
-      "rouge1": 0.387309687711691,
-      "rougeL": 0.38081260159866287
+      "rouge1": 0.371309687711691,
+      "rougeL": 0.36481260159866286
     },
     "okt": {
-      "rouge1": 0.4493683281514908,
-      "rougeL": 0.41728072908078107
+      "rouge1": 0.4386540424372051,
+      "rougeL": 0.40489977669982863
     },
     "raw_textrank": {
       "space": {
@@ -300,17 +300,17 @@
     },
     "preprocessed_textrank": {
       "space": {
-        "rouge1": 0.387309687711691,
-        "rougeL": 0.38081260159866287
+        "rouge1": 0.371309687711691,
+        "rougeL": 0.36481260159866286
       },
       "okt": {
-        "rouge1": 0.4493683281514908,
-        "rougeL": 0.41728072908078107
+        "rouge1": 0.4386540424372051,
+        "rougeL": 0.40489977669982863
       }
     },
-    "delta_space_rouge_1": 0.028,
-    "delta_space_rouge_l": 0.0326,
-    "delta_okt_rouge_1": 0.0262,
-    "delta_okt_rouge_l": 0.037
+    "delta_space_rouge_1": 0.012,
+    "delta_space_rouge_l": 0.0166,
+    "delta_okt_rouge_1": 0.0154,
+    "delta_okt_rouge_l": 0.0247
   }
 }

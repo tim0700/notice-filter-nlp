@@ -9,7 +9,7 @@
 
 | ID | 요구사항 | 상세 기준 |
 |---|---|---|
-| `FR-01` | 다중 소스 공지·복지 수집 | `swcon` 2종, `goodjob` 3종(비로그인 공개 목록), `성남청년다해` 필수 수집 + `온통청년 Open API`(`YOUTH_API_KEY` 설정 시 선택 수집), `robots.txt` 준수 및 9컬럼 Canonical Schema 정규화 |
+| `FR-01` | 다중 소스 공지·복지 수집 | `swcon` 2종, `goodjob` 3종(비로그인 공개 목록), `성남청년다해` 필수 수집 + `온통청년 Open API`(`YOUTH_POLICY_API_KEY`·`YOUTH_CONTENT_API_KEY` 설정 시 선택 수집), `robots.txt` 준수 및 9컬럼 Canonical Schema 정규화 |
 | `FR-02` | 한국어 텍스트 정제·키워드 분석 | 정규식 정제, `KoNLPy Okt` 형태소/명사 분석, 도메인 불용어 제거, `TF-IDF` 키워드 추출 및 `WordCloud` 시각화 |
 | `FR-03` | Cold-Start 임베딩 선별 | `config/profile.yaml` 관심/제외 쿼리와 공지 간 코사인 유사도 계산 (`jhgan/ko-sroberta-multitask` 기준선) |
 | `FR-04` | 사용자 피드백 기반 단계적 성능 개선 | 입력 구성·임계값 튜닝 → 소량 피드백 `Rocchio` 벡터 보정 → 누적 피드백 분류(`SBERT + LogReg` vs `TF-IDF + LogReg`) + 최신 한국어 임베딩(`KURE-v1` / `bge-m3`) 비교 |
@@ -54,4 +54,4 @@
 | `FR-03`, `FR-04`, `FR-05`, `FR-06`, `NFR-01` | `NTF-10` / `NTF-14` | `wt-nlp-core` (`feat/NTF-14-nlp-core`) | `src/models/`, `src/eval/` | `tests/test_models.py`, `tests/test_eval.py` |
 | `FR-07`, `NFR-03` | `NTF-10` / `NTF-15` | `wt-discord` (`feat/NTF-15-discord`) | `src/adapters/discord/` | `tests/test_discord.py` |
 | `FR-04`, `FR-05`, `FR-06`, `NFR-01` | `NTF-16` / `NTF-17`~`NTF-24` | `main` (Phase 2 실험·버그·노트북) | `scripts/run_experiments.py`, `src/models/summarizer.py`, `notebooks/notice_filter_pipeline.ipynb` | `results/final_test_results.json`, CPU 노트북 완주 (`8/8` 0에러) |
-| `FR-07`, `NFR-02`, `NFR-03` | `NTF-25` | `main` (Phase 3 운영·배포) | `scripts/run_alert_pipeline.py`, `src/adapters/discord/bot.py`, `src/models/embedder.py`, `deploy/` | `tests/test_alert_pipeline.py` (48 passed), `risuai-server` `notice-filter.service` (`active (running)`) |
+| `FR-07`, `NFR-02`, `NFR-03` | `NTF-25` | `main` (Phase 3 운영·배포) | `scripts/run_alert_pipeline.py`, `src/adapters/discord/bot.py`, `src/models/embedder.py`, `deploy/` | `tests/test_alert_pipeline.py` (전체 pytest 통과), `risuai-server` `notice-filter.service` (`active (running)`) |
