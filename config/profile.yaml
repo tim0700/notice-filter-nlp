@@ -79,6 +79,8 @@ models:
   default_threshold: 0.45
   textrank_top_k: 3
   textrank_min_sentences: 5
+  llm_judge_provider: "anthropic"
+  llm_judge_model: "claude-haiku-4-5-20251001"
 
 sources:
   - name: "swcon_academic"
