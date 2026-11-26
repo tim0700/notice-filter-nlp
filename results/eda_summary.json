@@ -1,0 +1,147 @@
+{
+  "raw_total": 979,
+  "raw_by_source": {
+    "goodjob_extracurricular": 150,
+    "goodjob_general": 150,
+    "goodjob_recommend": 150,
+    "swcon_academic": 150,
+    "swcon_career": 150,
+    "youth_api": 150,
+    "seongnam_youth": 79
+  },
+  "multi_sentence_ge5": 67,
+  "train_total": 729,
+  "train_pos": 323,
+  "train_neg": 406,
+  "top15_positive_keywords": [
+    [
+      "국제",
+      0.1465
+    ],
+    [
+      "캠퍼스",
+      0.0833
+    ],
+    [
+      "융합",
+      0.0662
+    ],
+    [
+      "소프트웨어",
+      0.0654
+    ],
+    [
+      "학과",
+      0.0648
+    ],
+    [
+      "학사",
+      0.0628
+    ],
+    [
+      "취업",
+      0.0589
+    ],
+    [
+      "장학",
+      0.053
+    ],
+    [
+      "센터",
+      0.0516
+    ],
+    [
+      "미래",
+      0.0503
+    ],
+    [
+      "인재",
+      0.0463
+    ],
+    [
+      "공통",
+      0.0453
+    ],
+    [
+      "홍보",
+      0.0416
+    ],
+    [
+      "청년",
+      0.038
+    ],
+    [
+      "일자리",
+      0.0349
+    ]
+  ],
+  "top15_negative_keywords": [
+    [
+      "국제",
+      0.0777
+    ],
+    [
+      "청년",
+      0.0564
+    ],
+    [
+      "채용",
+      0.0547
+    ],
+    [
+      "캠퍼스",
+      0.042
+    ],
+    [
+      "추천",
+      0.0395
+    ],
+    [
+      "인턴",
+      0.0389
+    ],
+    [
+      "문화",
+      0.0342
+    ],
+    [
+      "소프트웨어",
+      0.0298
+    ],
+    [
+      "융합",
+      0.0297
+    ],
+    [
+      "학과",
+      0.0296
+    ],
+    [
+      "금융",
+      0.0271
+    ],
+    [
+      "중소기업",
+      0.0262
+    ],
+    [
+      "정책",
+      0.0258
+    ],
+    [
+      "중견",
+      0.0257
+    ],
+    [
+      "그룹",
+      0.0255
+    ]
+  ],
+  "figures": [
+    "results/figures/01_source_distribution.png",
+    "results/figures/02_train_label_by_source.png",
+    "results/figures/03_tfidf_keywords_pos_vs_neg.png",
+    "results/figures/04_wordcloud_positive.png",
+    "results/figures/05_wordcloud_negative.png"
+  ]
+}

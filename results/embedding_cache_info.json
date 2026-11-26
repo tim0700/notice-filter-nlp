@@ -1,0 +1,77 @@
+{
+  "total_notices": 979,
+  "baseline": {
+    "model_name": "jhgan/ko-sroberta-multitask",
+    "device": "cuda",
+    "modes": {
+      "title": {
+        "cache_key": "raw_title_kosroberta",
+        "shape": [
+          979,
+          768
+        ],
+        "elapsed_sec": 0.02
+      },
+      "meta_title": {
+        "cache_key": "raw_meta_title_kosroberta",
+        "shape": [
+          979,
+          768
+        ],
+        "elapsed_sec": 0.02
+      },
+      "full": {
+        "cache_key": "raw_full_kosroberta",
+        "shape": [
+          979,
+          768
+        ],
+        "elapsed_sec": 0.02
+      }
+    },
+    "profile_queries": {
+      "pos_shape": [
+        4,
+        768
+      ],
+      "neg_shape": [
+        5,
+        768
+      ],
+      "elapsed_sec": 0.0
+    }
+  },
+  "modern": {
+    "model_name": "nlpai-lab/KURE-v1",
+    "device": "cuda",
+    "modes": {
+      "meta_title": {
+        "cache_key": "raw_meta_title_modern",
+        "shape": [
+          979,
+          1024
+        ],
+        "elapsed_sec": 0.02
+      },
+      "full": {
+        "cache_key": "raw_full_modern",
+        "shape": [
+          979,
+          1024
+        ],
+        "elapsed_sec": 17.7
+      }
+    },
+    "profile_queries": {
+      "pos_shape": [
+        4,
+        1024
+      ],
+      "neg_shape": [
+        5,
+        1024
+      ],
+      "elapsed_sec": 0.03
+    }
+  }
+}

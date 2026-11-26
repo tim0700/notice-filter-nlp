@@ -1,0 +1,146 @@
+[
+  {
+    "exp": "Exp 0 (Baseline: ko-sroberta title@0.45)",
+    "accuracy": 0.72,
+    "precision": 0.6545454545454545,
+    "recall": 0.8,
+    "f1": 0.72,
+    "confusion_matrix": [
+      [
+        36,
+        19
+      ],
+      [
+        9,
+        36
+      ]
+    ],
+    "threshold": 0.45
+  },
+  {
+    "exp": "Exp 1 (ko-sroberta full, tuned thr)",
+    "threshold": 0.37,
+    "accuracy": 0.74,
+    "precision": 0.6461538461538462,
+    "recall": 0.9333333333333333,
+    "f1": 0.7636363636363637,
+    "confusion_matrix": [
+      [
+        32,
+        23
+      ],
+      [
+        3,
+        42
+      ]
+    ]
+  },
+  {
+    "exp": "Exp 2 (Rocchio n=50, ko-sroberta)",
+    "threshold": 0.51,
+    "accuracy": 0.75,
+    "precision": 0.6515151515151515,
+    "recall": 0.9555555555555556,
+    "f1": 0.7747747747747747,
+    "confusion_matrix": [
+      [
+        32,
+        23
+      ],
+      [
+        2,
+        43
+      ]
+    ]
+  },
+  {
+    "exp": "Exp 3a (TF-IDF + LogReg, control)",
+    "threshold": 0.5,
+    "accuracy": 0.81,
+    "precision": 0.75,
+    "recall": 0.8666666666666667,
+    "f1": 0.8041237113402062,
+    "confusion_matrix": [
+      [
+        42,
+        13
+      ],
+      [
+        6,
+        39
+      ]
+    ]
+  },
+  {
+    "exp": "Exp 3b (ko-sroberta + LogReg, full)",
+    "threshold": 0.35,
+    "accuracy": 0.82,
+    "precision": 0.7288135593220338,
+    "recall": 0.9555555555555556,
+    "f1": 0.8269230769230769,
+    "confusion_matrix": [
+      [
+        39,
+        16
+      ],
+      [
+        2,
+        43
+      ]
+    ]
+  },
+  {
+    "exp": "Exp 4a (KURE-v1 Cosine)",
+    "threshold": 0.51,
+    "accuracy": 0.69,
+    "precision": 0.5945945945945946,
+    "recall": 0.9777777777777777,
+    "f1": 0.7394957983193278,
+    "confusion_matrix": [
+      [
+        25,
+        30
+      ],
+      [
+        1,
+        44
+      ]
+    ]
+  },
+  {
+    "exp": "Exp 4b (KURE-v1 Rocchio n=50)",
+    "threshold": 0.53,
+    "accuracy": 0.75,
+    "precision": 0.65625,
+    "recall": 0.9333333333333333,
+    "f1": 0.7706422018348624,
+    "confusion_matrix": [
+      [
+        33,
+        22
+      ],
+      [
+        3,
+        42
+      ]
+    ]
+  },
+  {
+    "exp": "Exp 4c (KURE-v1 + LogReg, full)",
+    "threshold": 0.4,
+    "accuracy": 0.82,
+    "precision": 0.7454545454545455,
+    "recall": 0.9111111111111111,
+    "f1": 0.82,
+    "confusion_matrix": [
+      [
+        41,
+        14
+      ],
+      [
+        4,
+        41
+      ]
+    ]
+  }
+]
