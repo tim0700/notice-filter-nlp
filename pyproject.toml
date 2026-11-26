@@ -1,0 +1,10 @@
+[project]
+name = "notice-filter-nlp"
+version = "0.1.0"
+description = "문장 임베딩과 사용자 피드백 기반 학생 맞춤형 공지 및 복지 선별 알림 모델"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
