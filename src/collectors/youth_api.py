@@ -1,4 +1,4 @@
-"""Collector for YouthCenter (온통청년) Open API supporting JSON and XML."""
+"""Collector for YouthCenter (온통청년) Open API v2 supporting JSON and XML."""
 
 from __future__ import annotations
 
@@ -9,12 +9,14 @@ from typing import Any
 
 import defusedxml.ElementTree as ET
 import requests
+from bs4 import BeautifulSoup
 
 from src.collectors.base import (
     BaseCollector,
     build_notice_id,
     clean_whitespace,
     extract_deadline_from_text,
+    extract_html_text,
     join_meta_tags,
     normalize_date,
     register_collector,
@@ -35,11 +37,11 @@ def _first_non_empty(item: dict[str, str], keys: tuple[str, ...]) -> str:
 
 @register_collector("youth_api")
 class YouthApiCollector(BaseCollector):
-    """Optional YouthCenter Open API collector with graceful skip when keys are missing."""
+    """Optional YouthCenter Open API v2 collector with graceful skip when keys are missing."""
 
     source_name: str = "youth_api"
-    base_url: str = "https://www.youthcenter.go.kr/opi/youthPlcyList.do"
-    content_api_url: str = "https://www.youthcenter.go.kr/opi/youthCntntList.do"
+    base_url: str = "https://www.youthcenter.go.kr/go/ythip/getPlcy"
+    content_api_url: str = "https://www.youthcenter.go.kr/go/ythip/getContent"
 
     def __init__(
         self,
@@ -64,7 +66,11 @@ class YouthApiCollector(BaseCollector):
                     break
             if raw_items is None and isinstance(data.get("result"), dict):
                 result = data["result"]
-                raw_items = result.get("youthPolicyList") or result.get("youthContentList") or result.get("items")
+                raw_items = (
+                    result.get("youthPolicyList")
+                    or result.get("youthContentList")
+                    or result.get("items")
+                )
             if raw_items is None and isinstance(data.get("empsInfo"), dict):
                 raw_items = data["empsInfo"].get("emp")
 
@@ -82,13 +88,21 @@ class YouthApiCollector(BaseCollector):
         normalized: list[dict[str, str]] = []
         for entry in raw_items:
             if isinstance(entry, dict):
-                normalized.append({str(k): clean_whitespace(str(v)) if v is not None else "" for k, v in entry.items()})
+                normalized.append(
+                    {
+                        str(k): str(v).strip() if v is not None else ""
+                        for k, v in entry.items()
+                    }
+                )
         return normalized
 
     def _extract_xml_items(self, text: str) -> list[dict[str, str]]:
         root = ET.fromstring(text)
         err_msg = root.findtext(".//errMsg") or root.findtext(".//resultMessage")
-        if err_msg and not any(root.findall(tag) for tag in (".//youthPolicy", ".//emp", ".//youthContent", ".//item")):
+        if err_msg and not any(
+            root.findall(tag)
+            for tag in (".//youthPolicy", ".//emp", ".//youthContent", ".//item")
+        ):
             logger.warning("Youth API returned XML message: %s", clean_whitespace(err_msg))
             return []
 
@@ -127,59 +141,78 @@ class YouthApiCollector(BaseCollector):
             return []
 
     def _item_to_record(self, item: dict[str, str], is_content: bool = False) -> NoticeRecord | None:
-        title = _first_non_empty(item, ("polyBizSjnm", "plcyNm", "cntntNm", "title", "sj"))
+        title = _first_non_empty(item, ("plcyNm", "polyBizSjnm", "pstTtl", "cntntNm", "title", "sj"))
         if not title:
             return None
 
-        raw_id = _first_non_empty(item, ("bizId", "plcyNo", "plcyId", "cntntId", "id", "rnum"))
+        raw_id = _first_non_empty(
+            item,
+            ("plcyNo", "bizId", "plcyId", "pstSn", "cntntId", "id", "rnum"),
+        )
         default_view = (
             f"https://www.youthcenter.go.kr/youthCntnt/view.do?cntntId={raw_id or '0'}"
-            if is_content
-            else f"https://www.youthcenter.go.kr/youthPlcy/view.do?plcyId={raw_id or '0'}"
+            if is_content or "pstSn" in item
+            else f"https://www.youthcenter.go.kr/youthPolicy/ythPlcyTotalSearch/ythPlcyDetail/{raw_id or '0'}"
         )
-        url = _first_non_empty(item, ("rfcSiteUrla1", "aplyUrlAddr", "url", "link")) or default_view
+        url = (
+            _first_non_empty(item, ("refUrlAddr1", "aplyUrlAddr", "rfcSiteUrla1", "url", "link"))
+            or default_view
+        )
         notice_id = build_notice_id(self.source_name, raw_id, url)
 
-        default_category = "청년콘텐츠" if is_content else "청년정책"
+        default_category = "청년콘텐츠" if (is_content or "pstSn" in item) else "청년정책"
         category = (
-            _first_non_empty(item, ("plcyTpNm", "lclsfNm", "mclsfNm", "cntntClsfNm", "category"))
+            _first_non_empty(
+                item,
+                ("lclsfNm", "mclsfNm", "plcyTpNm", "pstSeNm", "cntntClsfNm", "category"),
+            )
             or default_category
         )
 
-        content_parts = [
-            clean_whitespace(item.get(key, ""))
-            for key in (
-                "polyItcnCn",
-                "plcyExplnCn",
-                "sporCn",
-                "plcySprtCn",
-                "prcpCn",
-                "rqutProcCn",
-                "cntntCn",
-                "content",
+        content_parts: list[str] = []
+        for key in (
+            "plcyExplnCn",
+            "plcySprtCn",
+            "plcyAplyMthdCn",
+            "polyItcnCn",
+            "sporCn",
+            "prcpCn",
+            "rqutProcCn",
+            "pstWholCn",
+            "cntntCn",
+            "content",
+        ):
+            raw_val = str(item.get(key, "") or "").strip()
+            if not raw_val or raw_val == "-":
+                continue
+            cleaned_part = (
+                extract_html_text(BeautifulSoup(raw_val, "lxml"))
+                if "<" in raw_val and ">" in raw_val
+                else clean_whitespace(raw_val)
             )
-        ]
-        content = clean_whitespace(" ".join(part for part in content_parts if part and part != "-"))
+            if cleaned_part:
+                content_parts.append(cleaned_part)
+        content = clean_whitespace(" ".join(content_parts))
+
+        age_min = clean_whitespace(item.get("sprtTrgtMinAge", ""))
+        age_max = clean_whitespace(item.get("sprtTrgtMaxAge", ""))
+        age_span = f"만 {age_min}~{age_max}세" if age_min and age_max and (age_min != "0" or age_max != "0") else ""
 
         meta_tags = join_meta_tags(
-            *(
-                item.get(key, "")
-                for key in (
-                    "polyBizSecd",
-                    "polyBizTy",
-                    "rgtrInstCdNm",
-                    "sprvsnInstCdNm",
-                    "ageInfo",
-                    "plcyKywdNm",
-                    "region",
-                )
-            )
+            item.get("sprvsnInstCdNm", ""),
+            item.get("operInstCdNm", ""),
+            item.get("rgtrInstCdNm", ""),
+            item.get("plcyKywdNm", ""),
+            item.get("mclsfNm", ""),
+            item.get("polyBizSecd", ""),
+            item.get("ageInfo", "") or age_span,
+            item.get("region", ""),
         )
         posted_at = normalize_date(
             _first_non_empty(item, ("frstRegDt", "lastMdfcnDt", "regDt", "posted_at"))
         )
         deadline = extract_deadline_from_text(
-            _first_non_empty(item, ("rqutPrdCn", "aplyYmd", "deadline"))
+            _first_non_empty(item, ("aplyYmd", "rqutPrdCn", "bizPrdEndYmd", "deadline"))
         )
 
         return NoticeRecord(
@@ -201,17 +234,22 @@ class YouthApiCollector(BaseCollector):
         limit: int,
         seen_ids: set[str],
         is_content: bool = False,
+        extra_params: dict[str, Any] | None = None,
     ) -> list[NoticeRecord]:
         collected: list[NoticeRecord] = []
         for page in range(1, self.max_pages + 1):
             remaining = limit - len(collected)
             if remaining <= 0:
                 break
-            params = {
-                "openApiVlak": api_key,
-                "display": min(self.page_size, remaining),
-                "pageIndex": page,
+            params: dict[str, Any] = {
+                "apiKeyNm": api_key,
+                "pageNum": page,
+                "pageSize": min(self.page_size, remaining),
+                "rtnType": "json",
             }
+            if extra_params:
+                params.update(extra_params)
+
             try:
                 response = self._request(endpoint_url, params=params)
             except requests.RequestException as exc:
@@ -239,7 +277,7 @@ class YouthApiCollector(BaseCollector):
         return collected
 
     def fetch(self, limit: int = 100) -> list[NoticeRecord]:
-        """Load API keys from env/.env and collect YouthCenter notices, or skip with warning."""
+        """Load API keys from env/.env and collect YouthCenter v2 notices, or skip with warning."""
         load_env()
         policy_key = os.getenv("YOUTH_POLICY_API_KEY", "").strip()
         content_key = os.getenv("YOUTH_CONTENT_API_KEY", "").strip()
@@ -255,15 +293,28 @@ class YouthApiCollector(BaseCollector):
         seen_ids: set[str] = set()
 
         if policy_key:
+            # Query Seongnam (zipCd 41135) first for high local relevance, then general nationwide policies.
+            seongnam_limit = min(limit, max(20, limit // 3))
             records.extend(
                 self._fetch_endpoint(
                     self.base_url,
                     api_key=policy_key,
-                    limit=limit,
+                    limit=seongnam_limit,
                     seen_ids=seen_ids,
                     is_content=False,
+                    extra_params={"zipCd": "41135"},
                 )
             )
+            if len(records) < limit:
+                records.extend(
+                    self._fetch_endpoint(
+                        self.base_url,
+                        api_key=policy_key,
+                        limit=limit - len(records),
+                        seen_ids=seen_ids,
+                        is_content=False,
+                    )
+                )
         else:
             logger.warning(
                 "YOUTH_POLICY_API_KEY is empty; collecting only from YOUTH_CONTENT_API_KEY."

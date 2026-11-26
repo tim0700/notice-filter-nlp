@@ -222,7 +222,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Local-only notes, agent handoff docs, scratch scripts
+# Local-only notes, agent handoff docs, scratch scripts, and binary embedding caches
 .local/
 scratch/
+data/embeddings/
 

@@ -81,9 +81,12 @@ class GoodjobCollector(BaseCollector):
 
     def _find_title_anchor(self, row: Tag) -> Tag | None:
         for selector in (
+            ".col_subject a[href*='wr_id']",
+            ".col_subject a",
             ".bo_tit a",
             "td.td_subject a[href*='wr_id']",
             ".subject a[href*='wr_id']",
+            ".col_subject_sub a[href*='wr_id']",
             ".title a",
             ".subject a",
             "a[href*='wr_id']",
@@ -100,15 +103,16 @@ class GoodjobCollector(BaseCollector):
         return None
 
     def _extract_deadline(self, row: Tag, title: str) -> str:
-        deadline_el = row.select_one("td.td_deadline, .td_deadline, .deadline, span.deadline")
+        deadline_el = row.select_one("td.td_deadline, .td_deadline, .deadline, span.deadline, div.div_td.w12")
         if deadline_el is not None:
-            parsed = extract_deadline_from_text(deadline_el.get_text(" ", strip=True))
+            raw_deadline = clean_whitespace(deadline_el.get_text(" ", strip=True))
+            parsed = extract_deadline_from_text(raw_deadline)
             if parsed:
                 return parsed
 
-        for el in row.select("td, span"):
+        for el in row.select("td, div.div_td, span"):
             classes = " ".join(el.get("class", []))
-            if any(skip in classes for skip in ("td_datetime", "date", "td_num", "td_hit")):
+            if any(skip in classes for skip in ("td_datetime", "col_date", "date", "td_num", "col_num", "td_hit", "col_hit")):
                 continue
             text = clean_whitespace(el.get_text(" ", strip=True))
             if "~" in text or any(k in text for k in ("마감", "기한", "접수")):
@@ -133,6 +137,7 @@ class GoodjobCollector(BaseCollector):
             "td.td_campus",
             "td.td_job",
             "td.td_name",
+            "div.col_writer",
             ".sv_member",
         ):
             for el in row.select(selector):
@@ -140,9 +145,29 @@ class GoodjobCollector(BaseCollector):
                 if text:
                     meta_parts.append(text)
 
-        # Inspect generic table cells that are neither number, subject, date, deadline, nor hit count.
-        ignored_tokens = {"td_num", "num", "td_subject", "subject", "td_cate", "cate", "category", "td_datetime", "date", "td_deadline", "deadline", "td_hit", "hit"}
-        for cell in row.select("td"):
+        # Inspect generic table/div cells that are neither number, subject, date, deadline, nor hit count.
+        ignored_tokens = {
+            "td_num",
+            "col_num",
+            "num",
+            "td_subject",
+            "col_subject",
+            "subject",
+            "td_cate",
+            "cate",
+            "category",
+            "td_datetime",
+            "col_date",
+            "date",
+            "td_deadline",
+            "deadline",
+            "td_hit",
+            "col_hit",
+            "hit",
+            "w10",
+            "w12",
+        }
+        for cell in row.select("td, div.div_td"):
             cell_classes = set(cell.get("class", []))
             if cell_classes & ignored_tokens:
                 continue
@@ -163,7 +188,7 @@ class GoodjobCollector(BaseCollector):
         if not rows:
             rows = [tr for tr in soup.select("table tr") if not tr.find("th")]
         if not rows:
-            rows = soup.select("ul.board_list > li, div.bo_list li, div.list_row")
+            rows = soup.select("div.div_tb_tr, ul.board_list > li, div.bo_list li, div.list_row")
 
         records: list[NoticeRecord] = []
         for row in rows:
@@ -185,17 +210,17 @@ class GoodjobCollector(BaseCollector):
             notice_id = build_notice_id(self.source_name, wr_id, detail_url)
 
             cate_el = row.select_one(".bo_cate_link, td.td_cate, .cate, .category")
-            raw_cate = clean_whitespace(cate_el.get_text(" ", strip=True)) if cate_el else ""
+            raw_cate = clean_whitespace(cate_el.get_text(" ", strip=True)).strip("[]") if cate_el else ""
             category = (
                 raw_cate
                 or extract_leading_category(title)
                 or self.board_config["default_category"]
             )
 
-            date_el = row.select_one("td.td_datetime, .td_datetime, .date, span.date")
+            date_el = row.select_one("td.td_datetime, .td_datetime, div.col_date, .date, span.date")
             posted_at = normalize_date(date_el.get_text(" ", strip=True) if date_el else "")
             if not posted_at:
-                for cell in row.select("td, span"):
+                for cell in row.select("td, div.div_td, span"):
                     candidate = normalize_date(cell.get_text(" ", strip=True))
                     if candidate:
                         posted_at = candidate

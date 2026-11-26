@@ -72,21 +72,22 @@ class SwconCollector(BaseCollector):
     def _extract_detail_url(self, anchor: Tag, list_url: str) -> tuple[str, str]:
         href = clean_whitespace(str(anchor.get("href", "")))
         onclick = clean_whitespace(str(anchor.get("onclick", "")))
-        data_id = clean_whitespace(str(anchor.get("data-nttid") or anchor.get("data-id") or ""))
+        data_id = clean_whitespace(str(anchor.get("data-boardid") or anchor.get("data-nttid") or anchor.get("data-id") or ""))
 
         if not href or href.startswith("#") or href.lower().startswith("javascript:"):
             raw_id = data_id
-            if not raw_id and onclick:
-                match = _ONCLICK_ID_RE.search(onclick)
-                if match:
-                    raw_id = match.group(1)
+            for js_source in (href, onclick):
+                if not raw_id and js_source:
+                    match = _ONCLICK_ID_RE.search(js_source)
+                    if match:
+                        raw_id = match.group(1)
             if not raw_id:
                 return "", ""
-            full_url = f"{self.view_base_url}?menuNo={self.menu_no}&nttId={raw_id}"
+            full_url = f"{self.view_base_url}?menuNo={self.menu_no}&boardId={raw_id}"
             return full_url, raw_id
 
         full_url = urljoin(list_url, href)
-        raw_id = extract_query_param(full_url, "nttId", "boardId", "seq", "idx") or data_id
+        raw_id = extract_query_param(full_url, "boardId", "nttId", "seq", "idx") or data_id
         return full_url, raw_id
 
     def _find_title_anchor(self, row: Tag) -> Tag | None:
@@ -173,6 +174,7 @@ class SwconCollector(BaseCollector):
 
         content_node: Tag | None = None
         for selector in (
+            "div.bbs-view_c",
             "div.board_view_con",
             "div.view_content",
             "div.bbs_view_cont",

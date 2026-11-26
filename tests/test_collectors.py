@@ -58,6 +58,9 @@ class _FakeResponse:
         if self.status_code >= 400:
             raise requests.HTTPError(f"HTTP {self.status_code}", response=self)
 
+    def json(self) -> Any:
+        return json.loads(self.text)
+
 
 class _FakeSession:
     """Offline requests.Session mock dispatching URL+params routes."""
@@ -161,7 +164,7 @@ def test_swcon_collector_pagination_and_detail(monkeypatch: pytest.MonkeyPatch) 
           <tr>
             <td class="num">12</td>
             <td class="cate">장학</td>
-            <td class="subject"><a href="#view" onclick="fn_view('1002')">SW중심대학 우수장학생 선발</a></td>
+            <td class="subject"><a href="javascript:view('1002');">SW중심대학 우수장학생 선발</a></td>
             <td class="writer">사업단</td>
             <td class="date">2026-11-18</td>
           </tr>
@@ -212,9 +215,9 @@ def test_swcon_collector_pagination_and_detail(monkeypatch: pytest.MonkeyPatch) 
                 return _FakeResponse("<html><body></body></html>", url=url)
         if "nttId=1001" in url:
             return _FakeResponse(detail_1001, url=url)
-        if "nttId=1002" in url:
+        if "boardId=1002" in url or "nttId=1002" in url:
             return _FakeResponse(detail_1002, url=url)
-        if "nttId=2001" in url:
+        if "nttId=2001" in url or "boardId=2001" in url:
             raise requests.RequestException("detail timeout")
         raise AssertionError(f"Unexpected URL: {url}")
 
@@ -232,7 +235,7 @@ def test_swcon_collector_pagination_and_detail(monkeypatch: pytest.MonkeyPatch) 
     assert "alert" not in records[0].content
     assert "공지" in records[0].meta_tags
     assert records[1].id == "swcon_academic_1002"
-    assert records[1].url.endswith("menuNo=21300017&nttId=1002")
+    assert records[1].url.endswith("menuNo=21300017&boardId=1002")
     assert "산학협력 우수장학생" in records[1].content
 
     career = SwconCareerCollector(session=session, delay_seconds=0)
@@ -380,7 +383,7 @@ def test_seongnam_youth_collector_list_and_detail(monkeypatch: pytest.MonkeyPatc
         return _FakeResponse("<html><body></body></html>", url=url)
 
     session = _FakeSession(handler)
-    collector = SeongnamYouthCollector(session=session, delay_seconds=0)
+    collector = SeongnamYouthCollector(use_sn_api=False, session=session, delay_seconds=0)
     monkeypatch.setattr(collector, "check_robots", lambda url: True)
     records = collector.fetch(limit=10)
 
@@ -444,16 +447,18 @@ def test_youth_api_collector_json_xml_and_missing_keys(
 
     def handler(url: str, params: dict[str, Any] | None) -> _FakeResponse:
         assert params is not None
-        if params["pageIndex"] > 1:
+        if params["pageNum"] > 1:
             return _FakeResponse("{}", url=url, headers={"Content-Type": "application/json"})
-        if "youthPlcyList" in url:
-            assert params["openApiVlak"] == "policy-key"
-            return _FakeResponse(
-                json_payload,
-                url=url,
-                headers={"Content-Type": "application/json;charset=utf-8"},
-            )
-        assert params["openApiVlak"] == "content-key"
+        if "getPlcy" in url:
+            assert params["apiKeyNm"] == "policy-key"
+            if params.get("zipCd") == "41135":
+                return _FakeResponse(
+                    json_payload,
+                    url=url,
+                    headers={"Content-Type": "application/json;charset=utf-8"},
+                )
+            return _FakeResponse("{}", url=url, headers={"Content-Type": "application/json"})
+        assert params["apiKeyNm"] == "content-key"
         return _FakeResponse(
             xml_content_payload,
             url=url,
@@ -487,7 +492,9 @@ def test_youth_api_collector_json_xml_and_missing_keys(
     monkeypatch.delenv("YOUTH_CONTENT_API_KEY", raising=False)
     xml_session = _FakeSession(
         lambda url, params: _FakeResponse(
-            xml_policy_payload if (params or {}).get("pageIndex", 1) == 1 else "<youthPolicyList/>",
+            xml_policy_payload
+            if (params or {}).get("pageNum", 1) == 1 and (params or {}).get("zipCd") == "41135"
+            else "<youthPolicyList/>",
             url=url,
             headers={"Content-Type": "application/xml"},
         )
@@ -496,6 +503,61 @@ def test_youth_api_collector_json_xml_and_missing_keys(
     assert len(xml_records) == 1
     assert xml_records[0].id == "youth_api_X7002"
     assert xml_records[0].deadline == "2026-12-20"
+
+
+def test_live_dom_regressions_goodjob_div_table_and_seongnam_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 1. Goodjob div_tb_tr layout (s3_2 recommend with both col_subject and col_subject_sub)
+    div_html = """
+    <html><body>
+      <div class="div_tb_tr bo_notice">
+        <div class="div_td col_num"><strong>공지</strong></div>
+        <div class="div_td">국제</div>
+        <div class="div_td">중견/중소기업</div>
+        <div class="div_td col_subject ta_l"><a href="https://goodjob.khu.ac.kr/bbs/board.php?bo_table=s3_2&wr_id=2171">[(주)코스모웍스] 연구개발 신입 모집</a></div>
+        <div class="div_td col_subject_sub"><a href="https://goodjob.khu.ac.kr/bbs/board.php?bo_table=s3_2&wr_id=2171">[(주)코스모웍스]</a></div>
+        <div class="div_td col_date">26-10-21</div>
+        <div class="div_td w12">2026.11.29.(일) 23:50까지</div>
+      </div>
+    </body></html>
+    """
+    gj_session = _FakeSession(
+        lambda url, params: _FakeResponse(div_html if (params or {}).get("page", 1) == 1 else "<html></html>", url=url)
+    )
+    gj = GoodjobRecommendCollector(session=gj_session, delay_seconds=0)
+    monkeypatch.setattr(gj, "check_robots", lambda url: True)
+    gj_records = gj.fetch(limit=5)
+    assert len(gj_records) == 1
+    assert gj_records[0].title == "[(주)코스모웍스] 연구개발 신입 모집"
+    assert gj_records[0].deadline == "2026-11-29"
+    assert gj_records[0].posted_at == "2026-10-21"
+    assert "국제" in gj_records[0].meta_tags
+    assert gj_records[0].content == ""
+
+    # 2. Seongnam sn-api JSON + 404 robots.txt check
+    class _SnSession:
+        def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse("Not Found", url=url, status_code=404)
+
+        def post(self, url: str, json: dict[str, Any] | None = None, **kwargs: Any) -> _FakeResponse:
+            if "notice/list" in url:
+                return _FakeResponse(
+                    '{"success":true,"data":[{"noticeId":49,"category":"GENERAL","title":"성남 청년 해커톤","content":"첫째 문장입니다. 둘째 문장입니다.","author":"정책기획과","registDt":"2026-10-06"}]}',
+                    url=url,
+                )
+            if (json or {}).get("pageNo") == 1:
+                return _FakeResponse(
+                    '{"success":true,"data":{"response":[{"businessSeq":281,"title":"성남 자격증 지원","receptTypeCmmnClNm":"교육","startDate":"2026-11-02","endDate":"2026-11-26","target":"성남시 청년","businessDescription":"자격증 응시료를 지원합니다."}]}}',
+                    url=url,
+                )
+            return _FakeResponse('{"success":true,"data":{"response":[]}}', url=url)
+
+    sn = SeongnamYouthCollector(session=_SnSession(), delay_seconds=0)  # type: ignore[arg-type]
+    assert sn.check_robots("https://dept.seongnam.go.kr/youth/contents.do?mId=0301000000") is True
+    sn_records = sn.fetch(limit=10)
+    assert len(sn_records) == 2
+    assert sn_records[0].id == "seongnam_youth_notice_49"
+    assert sn_records[1].id == "seongnam_youth_biz_281"
+    assert sn_records[1].deadline == "2026-11-26"
 
 
 def test_runner_collect_all_resilience_dedup_and_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

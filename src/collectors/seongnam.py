@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 import re
+import ssl
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 import requests
 from bs4 import BeautifulSoup, Tag
+from requests.adapters import HTTPAdapter
 
 from src.collectors.base import (
     BaseCollector,
@@ -26,19 +29,34 @@ from src.schema import NoticeRecord
 
 logger = logging.getLogger(__name__)
 
-_ONCLICK_ID_RE = re.compile(r"(?:fn_view|fnView|goDetail|goView|view|detail)\s*\(\s*['\"]?([A-Za-z0-9_-]+)['\"]?")
+_ONCLICK_ID_RE = re.compile(
+    r"(?:fn_view|fnView|goDetail|goView|view|detail)\s*\(\s*['\"]?([A-Za-z0-9_-]+)['\"]?"
+)
+
+
+class _LegacyTLSAdapter(HTTPAdapter):
+    """TLS adapter allowing SECLEVEL=1 for legacy Korean municipal HTTPS servers."""
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> Any:
+        ctx = ssl.create_default_context()
+        ctx.set_ciphers("DEFAULT@SECLEVEL=1")
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
 
 
 @register_collector("seongnam_youth")
 class SeongnamYouthCollector(BaseCollector):
-    """Collector for dept.seongnam.go.kr/youth public policy/notice list and detail pages."""
+    """Collector for dept.seongnam.go.kr/youth public policy/business/notice endpoints."""
 
     source_name: str = "seongnam_youth"
     base_url: str = "https://dept.seongnam.go.kr/youth/contents.do?mId=0301000000"
+    api_base_url: str = "https://dept.seongnam.go.kr/youth/sn-api/api"
+    portal_base_url: str = "https://dept.seongnam.go.kr/youth"
 
     def __init__(
         self,
         fetch_detail: bool = True,
+        use_sn_api: bool = True,
         max_pages: int = 20,
         session: requests.Session | None = None,
         timeout: float = 15.0,
@@ -46,7 +64,35 @@ class SeongnamYouthCollector(BaseCollector):
     ) -> None:
         super().__init__(session=session, timeout=timeout, delay_seconds=delay_seconds)
         self.fetch_detail = fetch_detail
+        self.use_sn_api = use_sn_api
         self.max_pages = max_pages
+
+    def _get_session(self) -> requests.Session:
+        """Mount LegacyTLSAdapter on HTTPS so dept.seongnam.go.kr handshake succeeds."""
+        if self._session is None:
+            session = requests.Session()
+            session.headers.update({"User-Agent": self.user_agent})
+            session.mount("https://", _LegacyTLSAdapter())
+            self._session = session
+        return self._session
+
+    def check_robots(self, url: str) -> bool:
+        """Check robots.txt via configured session (treating HTTP 404 as allowed per standard)."""
+        parsed = urlparse(url)
+        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+        try:
+            resp = self._get_session().get(robots_url, timeout=self.timeout)
+        except requests.RequestException:
+            return False
+
+        if resp.status_code == 404:
+            return True
+        if resp.status_code >= 400:
+            return False
+
+        parser = RobotFileParser()
+        parser.parse(resp.text.splitlines())
+        return parser.can_fetch(self.user_agent, url)
 
     def _build_list_url(self, page: int = 1) -> str:
         sep = "&" if "?" in self.base_url else "?"
@@ -59,10 +105,11 @@ class SeongnamYouthCollector(BaseCollector):
 
         if not href or href.startswith("#") or href.lower().startswith("javascript:"):
             raw_id = data_id
-            if not raw_id and onclick:
-                match = _ONCLICK_ID_RE.search(onclick)
-                if match:
-                    raw_id = match.group(1)
+            for js_source in (href, onclick):
+                if not raw_id and js_source:
+                    match = _ONCLICK_ID_RE.search(js_source)
+                    if match:
+                        raw_id = match.group(1)
             if not raw_id:
                 return "", ""
             sep = "&" if "?" in self.base_url else "?"
@@ -218,8 +265,142 @@ class SeongnamYouthCollector(BaseCollector):
 
         return content, posted_at, deadline, extra_tags
 
+    def _post_api(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Issue a polite POST JSON request against Seongnam Youth sn-api."""
+        if self._has_requested and self.delay_seconds > 0:
+            import time
+
+            time.sleep(self.delay_seconds)
+        self._has_requested = True
+
+        resp = self._get_session().post(
+            f"{self.api_base_url}{path}",
+            json=payload,
+            headers={"Accept": "application/json"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def _parse_business_item(self, item: dict[str, Any]) -> NoticeRecord | None:
+        title = clean_whitespace(str(item.get("title", "")))
+        seq = str(item.get("businessSeq", "") or "").strip()
+        if not title or not seq:
+            return None
+
+        category = clean_whitespace(str(item.get("receptTypeCmmnClNm") or "청년지원사업"))
+        raw_desc = str(item.get("businessDescriptionHtml") or item.get("businessDescription") or "")
+        if "<" in raw_desc and ">" in raw_desc:
+            desc = extract_html_text(BeautifulSoup(raw_desc, "lxml"))
+        else:
+            desc = clean_whitespace(raw_desc)
+        target = clean_whitespace(str(item.get("target") or ""))
+        content_parts = [p for p in (target, desc) if p and p != target[:len(p)]]
+        content = clean_whitespace(" ".join(content_parts)) if desc != target else desc
+
+        posted_at = normalize_date(str(item.get("announceStartDate") or item.get("registDt") or ""))
+        deadline = normalize_date(str(item.get("endDate") or ""))
+        meta_tags = join_meta_tags(
+            "성남시",
+            "분당구" if "분당" in (title + " " + content) else "",
+            category,
+            str(item.get("supportTypeCmmnClNm") or ""),
+            str(item.get("addSearchKeyword") or ""),
+        )
+        url = f"{self.portal_base_url}/apply/business/detail/{seq}"
+        return NoticeRecord(
+            id=build_notice_id(self.source_name, f"biz_{seq}", url),
+            source=self.source_name,
+            category=category,
+            title=title,
+            meta_tags=meta_tags,
+            posted_at=posted_at,
+            url=url,
+            content=content,
+            deadline=deadline,
+        )
+
+    def _parse_notice_item(self, item: dict[str, Any]) -> NoticeRecord | None:
+        title = clean_whitespace(str(item.get("title", "")))
+        nid = str(item.get("noticeId", "") or "").strip()
+        if not title or not nid:
+            return None
+
+        raw_content = str(item.get("content") or "")
+        content = (
+            extract_html_text(BeautifulSoup(raw_content, "lxml"))
+            if "<" in raw_content and ">" in raw_content
+            else clean_whitespace(raw_content)
+        )
+        posted_at = normalize_date(str(item.get("registDt") or ""))
+        deadline = extract_deadline_from_text(content) if content else ""
+        author = clean_whitespace(str(item.get("author") or ""))
+        category = clean_whitespace(str(item.get("category") or "공지사항"))
+        url = f"{self.portal_base_url}/news/news/youth/detail/{nid}"
+        return NoticeRecord(
+            id=build_notice_id(self.source_name, f"notice_{nid}", url),
+            source=self.source_name,
+            category=category,
+            title=title,
+            meta_tags=join_meta_tags("성남시", author),
+            posted_at=posted_at,
+            url=url,
+            content=content,
+            deadline=deadline,
+        )
+
+    def _fetch_sn_api(self, limit: int) -> list[NoticeRecord]:
+        collected: list[NoticeRecord] = []
+        seen_ids: set[str] = set()
+
+        # 1. Notice list
+        try:
+            notice_res = self._post_api("/notice/list", {"pageNo": 1, "pageSize": min(50, limit)})
+            for item in notice_res.get("data") or []:
+                if not isinstance(item, dict):
+                    continue
+                rec = self._parse_notice_item(item)
+                if rec and rec.id not in seen_ids:
+                    seen_ids.add(rec.id)
+                    collected.append(rec)
+                    if len(collected) >= limit:
+                        return collected
+        except requests.RequestException as exc:
+            logger.warning("Seongnam notice API failed: %s", exc)
+
+        # 2. Youth business/support programs
+        for page in range(1, self.max_pages + 1):
+            if len(collected) >= limit:
+                break
+            try:
+                biz_res = self._post_api("/business/list", {"pageNo": page, "pageSize": 20})
+            except requests.RequestException as exc:
+                logger.warning("Seongnam business API failed (page=%d): %s", page, exc)
+                break
+
+            data_obj = biz_res.get("data") or {}
+            items = data_obj.get("response") if isinstance(data_obj, dict) else data_obj
+            if not items:
+                break
+
+            added = 0
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                rec = self._parse_business_item(item)
+                if rec and rec.id not in seen_ids:
+                    seen_ids.add(rec.id)
+                    collected.append(rec)
+                    added += 1
+                    if len(collected) >= limit:
+                        break
+            if added == 0:
+                break
+
+        return collected[:limit]
+
     def fetch(self, limit: int = 100) -> list[NoticeRecord]:
-        """Collect public notices and optional detail bodies from Seongnam Youth Portal."""
+        """Collect public notices/programs via sn-api JSON (with HTML board fallback)."""
         if limit <= 0:
             return []
 
@@ -227,6 +408,11 @@ class SeongnamYouthCollector(BaseCollector):
         if not self._is_allowed(first_list_url):
             logger.warning("robots.txt disallowed crawling %s", first_list_url)
             return []
+
+        if self.use_sn_api:
+            api_records = self._fetch_sn_api(limit)
+            if api_records:
+                return api_records
 
         collected: list[NoticeRecord] = []
         seen_ids: set[str] = set()

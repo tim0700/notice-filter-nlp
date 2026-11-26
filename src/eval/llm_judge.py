@@ -52,9 +52,14 @@ class AnthropicNoticeJudge:
 
             if self._api_key is None:
                 load_env()
-                self._api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+                self._api_key = (
+                    os.getenv("ANTHROPIC_API_KEY", "").strip()
+                    or os.getenv("CLAUDE_API_KEY", "").strip()
+                )
             if not self._api_key:
-                raise ValueError("ANTHROPIC_API_KEY is not set in the environment or .env.")
+                raise ValueError(
+                    "ANTHROPIC_API_KEY (or CLAUDE_API_KEY) is not set in the environment or .env."
+                )
             self._client = anthropic.Anthropic(api_key=self._api_key)
         return self._client
 
@@ -116,7 +121,14 @@ class AnthropicNoticeJudge:
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid JSON from LLM judge: {cleaned!r}") from exc
+            obj_match = re.search(r"\{[^{}]*\}", cleaned, re.DOTALL)
+            if obj_match:
+                try:
+                    parsed = json.loads(obj_match.group(0))
+                except json.JSONDecodeError as inner_exc:
+                    raise ValueError(f"Invalid JSON from LLM judge: {cleaned!r}") from inner_exc
+            else:
+                raise ValueError(f"Invalid JSON from LLM judge: {cleaned!r}") from exc
 
         if not isinstance(parsed, dict):
             raise ValueError(f"Expected JSON object from LLM judge, got {type(parsed).__name__}")
@@ -158,7 +170,6 @@ class AnthropicNoticeJudge:
         response = client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
-            temperature=0.0,
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
