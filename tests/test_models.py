@@ -14,6 +14,7 @@ from src.config import find_repo_root, load_profile
 from src.models import (
     CosineProfileScorer,
     EmbeddingLogRegScorer,
+    PreprocessedTextRankSummarizer,
     RocchioScorer,
     SentenceEmbedder,
     TextRankSummarizer,
@@ -372,3 +373,62 @@ def test_textrank_summarizer_on_sample_notices_and_edge_cases() -> None:
     disjoint = "가나다라. 마바사아. 자차카타. 파하거너. 더러머버. 서어저처."
     fallback_summary = summarizer.summarize(disjoint)
     assert len(summarizer.split_sentences(fallback_summary)) == 3
+
+
+def test_preprocessed_textrank_filters_checklist_and_splits_structure() -> None:
+    prep = PreprocessedTextRankSummarizer(top_k=3, min_sentences=4)
+
+    scholarship_notice = (
+        "2026-2학기 문숙장학재단 신규장학생 선발 안내입니다. "
+        "지원대상은 소프트웨어융합학과 4학년 재학생 중 직전학기 평점 3.5 이상 학생입니다. "
+        "선발 인원에게는 학기당 등록금 200만원을 지원합니다. "
+        "신청기간은 2026. 11. 21.부터 12. 05.까지이며 온라인으로 접수합니다. "
+        "[제출서류] "
+        "4) 직전학기 성적증명서 1부 - 각 학교 소정 양식 "
+        "5) 최근 월이 포함된 건강·장기요양보험료 납부확인서 1부 "
+        "• 부모 따로 가입된 경우 각 1부씩 -국민건강관리공단에서 확인 가능) "
+        "6) 건강보험증 사본 또는 건강보험 자격확인(통보)서 1부 "
+        "• 자격득실확인서가 아님 - 부모 따로 가입된 경우 각 1부씩) "
+        "문의: 학생지원센터 장학팀 02-1234-5678"
+    )
+    summary = prep.summarize(scholarship_notice)
+    assert "문숙장학재단 신규장학생 선발 안내입니다" in summary
+    assert "등록금 200만원을 지원합니다" in summary or "소프트웨어융합학과 4학년" in summary
+    assert "2026. 11. 21." in summary  # Date must not be broken across inline dot rule
+    assert "성적증명서 1부" not in summary
+    assert "납부확인서" not in summary
+    assert "02-1234-5678" not in summary
+
+    municipal_notice = (
+        "[사업개요] "
+        "❍ 일 시: 2026. 11. 21.(토) 14:00-17:00 "
+        "❍ 대 상: 성남시 거주·재학 중인 청년 개인 혹은 팀 "
+        "❍ 총시상금: 금 4,700,000원 및 우수 제안 시상 진행 "
+        "❍ 접수방법: 홈페이지 접수 https://www.snyouth.or.kr/fmcs/215 "
+        "[제출서류] "
+        "❍ 신청서, 개인정보제공동의서 각 1부 제출 "
+        "문의처: 청년지원팀 admin@example.com"
+    )
+    muni_summary = prep.summarize(municipal_notice)
+    assert "https://www.snyouth.or.kr" not in muni_summary
+    assert "admin@example.com" not in muni_summary
+    assert "개인정보제공동의서" not in muni_summary
+    assert "총시상금" in muni_summary or "성남시 거주" in muni_summary
+
+    # Fallback when every line is boilerplate/checklist: never return empty string
+    only_boilerplate = (
+        "1) 재학증명서 1부 제출 "
+        "2) 성적증명서 1부 제출 "
+        "3) 가족관계증명서 1부 제출 "
+        "4) 주민등록등본 1부 제출 "
+        "문의: 031-729-4419"
+    )
+    bp_summary = prep.summarize(only_boilerplate)
+    assert bp_summary.strip() != ""
+    assert "재학증명서" in bp_summary
+
+    # Real data/sample_notices.csv multi-sentence notices must never return empty
+    sample_df = pd.read_csv(find_repo_root() / "data" / "sample_notices.csv", encoding="utf-8")
+    for content in sample_df["content"].fillna(""):
+        if str(content).strip():
+            assert prep.summarize(str(content)).strip() != ""

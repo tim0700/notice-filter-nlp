@@ -36,7 +36,7 @@ from src.models.scorer import (
     TfidfLogRegScorer,
     extract_texts_from_df,
 )
-from src.models.summarizer import TextRankSummarizer
+from src.models.summarizer import PreprocessedTextRankSummarizer, TextRankSummarizer
 
 
 class LookupEmbedder:
@@ -417,14 +417,42 @@ def run_final_eval() -> dict[str, Any]:
         s_eval = pd.read_csv(sum_eval_path, encoding="utf-8")
         s_gold = pd.read_csv(sum_gold_path, encoding="utf-8")
         s_merged = s_eval.merge(s_gold[["id", "human_summary"]], on="id", how="inner")
-        summarizer = TextRankSummarizer(top_k=3, min_sentences=5)
-        preds = [summarizer.summarize(str(t)) for t in s_merged["content"].fillna("")]
+        raw_summarizer = TextRankSummarizer(top_k=3, min_sentences=5)
+        prep_summarizer = PreprocessedTextRankSummarizer(top_k=3, min_sentences=5)
+
+        contents = [str(t) for t in s_merged["content"].fillna("")]
+        raw_preds = [raw_summarizer.summarize(t) for t in contents]
+        prep_preds = [prep_summarizer.summarize(t) for t in contents]
         refs = [str(r) for r in s_merged["human_summary"].fillna("")]
+
+        raw_space = evaluate_korean_rouge(refs, raw_preds, tokenizer="space")
+        raw_okt = evaluate_korean_rouge(refs, raw_preds, tokenizer="okt")
+        prep_space = evaluate_korean_rouge(refs, prep_preds, tokenizer="space")
+        prep_okt = evaluate_korean_rouge(refs, prep_preds, tokenizer="okt")
+
         rouge_results = {
             "count": len(s_merged),
-            "space": evaluate_korean_rouge(refs, preds, tokenizer="space"),
-            "okt": evaluate_korean_rouge(refs, preds, tokenizer="okt"),
+            "space": prep_space,
+            "okt": prep_okt,
+            "raw_textrank": {"space": raw_space, "okt": raw_okt},
+            "preprocessed_textrank": {"space": prep_space, "okt": prep_okt},
+            "delta_space_rouge_1": round(prep_space["rouge1"] - raw_space["rouge1"], 4),
+            "delta_space_rouge_l": round(prep_space["rougeL"] - raw_space["rougeL"], 4),
+            "delta_okt_rouge_1": round(prep_okt["rouge1"] - raw_okt["rouge1"], 4),
+            "delta_okt_rouge_l": round(prep_okt["rougeL"] - raw_okt["rougeL"], 4),
         }
+
+        comp_df = pd.DataFrame(
+            {
+                "id": s_merged["id"],
+                "source": s_merged["source"],
+                "title": s_merged["title"],
+                "human_summary": refs,
+                "raw_textrank": raw_preds,
+                "preprocessed_textrank": prep_preds,
+            }
+        )
+        comp_df.to_csv(_REPO_ROOT / "results" / "summary_eval_comparison.csv", index=False, encoding="utf-8")
 
     # Figures 06-08
     fig_dir = _REPO_ROOT / "results" / "figures"
