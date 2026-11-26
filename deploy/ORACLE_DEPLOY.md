@@ -2,7 +2,7 @@
 
 `scripts/run_alert_pipeline.py --daemon`은 다음 두 가지 역할을 한 프로세스에서 동시에 수행합니다.
 1. **상시 Discord 봇**: 사용자가 언제든 공지 카드의 `관심 👍 / 제외 👎` 버튼을 누르면 봇 재시작 후에도 `on_interaction`이 즉시 `data/feedback.csv`에 저장
-2. **매일 지정 시각(`09:00 KST`) 자동 파이프라인**: 최신 공지 수집 → 기발송 중복 제외(`data/sent_notices.json`) → `train.csv + feedback.csv`(가중치 `3x`) 재학습 → `ko-sroberta + LogReg` 점수 산출 → `PreprocessedTextRankSummarizer` 요약 → Discord 발송 → 모델 메모리 해제(`unload()`)
+2. **매일 지정 시각(`09:00 KST`) 자동 파이프라인**: 최신 공지 수집 → 기발송 중복 제외(`data/sent_notices.json`) → `train.csv + feedback.csv`(가중치 `3x`) 재학습 → `ko-sroberta + LogReg` 점수 산출 → `SemanticMMRTextRankSummarizer` 요약 + `extract_notice_slots` 핵심 정보 슬롯 추출 → Discord 발송 → 모델 메모리 해제(`unload()`)
 
 > **참고**: 실운영 추론 경로는 `KoNLPy/Java`를 사용하지 않는 순수 Python이므로 JDK 설치가 필요 없습니다.
 

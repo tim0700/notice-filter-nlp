@@ -5,7 +5,7 @@
 - **상태**: 채택됨 (Phase 0)
 - **배경**: 로컬 개발 PC에는 Python 3.10~3.14와 RTX 4070 Ti(CUDA)가 함께 존재하지만, PyTorch CUDA 빌드·`JPype1(KoNLPy)`·`sentence-transformers` 간 안정 호환성과 제출 노트북의 CPU 전용 평가 환경(`Restart & Run All`)을 동시에 만족해야 함.
 - **결정**:
-  1. 모든 Worktree가 `C:\Users\LEE\notice-filter-nlp\.venv`(Python 3.11.9) 단일 인터프리터를 공유한다.
+  1. 모든 Worktree가 `<repo-root>\.venv`(Python 3.11.9) 단일 인터프리터를 공유한다.
   2. `requirements.txt`에는 `+cu124` 태그가 없는 일반 `torch>=2.0.0`만 기록해 CPU 환경 `pip install -r requirements.txt` 실패를 방지하고, GPU 설치 명령은 `README.md`로 분리한다.
   3. 런타임에서는 `src.config.get_device()`가 `torch.cuda.is_available()`을 점검해 `"cuda"` 또는 `"cpu"`를 자동 선택한다.
 - **결과**: Worktree별 2.4GB PyTorch 중복 설치를 제거하고, 평가자 CPU 환경에서도 동일 코드가 재현된다.
