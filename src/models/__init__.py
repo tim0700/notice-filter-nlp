@@ -7,6 +7,7 @@ from src.models.scorer import (
     NoticeScorer,
     RocchioScorer,
     TfidfLogRegScorer,
+    extract_texts_from_df,
 )
 from src.models.summarizer import TextRankSummarizer
 
@@ -18,4 +19,5 @@ __all__ = [
     "SentenceEmbedder",
     "TextRankSummarizer",
     "TfidfLogRegScorer",
+    "extract_texts_from_df",
 ]
