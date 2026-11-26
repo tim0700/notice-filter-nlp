@@ -28,6 +28,9 @@ from src.adapters.discord.formatter import (
     HIGH_SCORE_COLOR,
     LOW_SCORE_COLOR,
     MEDIUM_SCORE_COLOR,
+    format_deadline_dday,
+    format_score_badge,
+    format_source_label,
     score_to_color,
 )
 from src.config import CANONICAL_COLUMNS, FEEDBACK_COLUMNS, find_repo_root
@@ -74,18 +77,30 @@ def test_format_notice_message_and_score_colors() -> None:
     assert score_to_color(0.60) == MEDIUM_SCORE_COLOR
     assert score_to_color(0.50) == MEDIUM_SCORE_COLOR
     assert score_to_color(0.20) == LOW_SCORE_COLOR
+    assert format_source_label("seongnam_youth") == "🏛️ 성남청년다해"
+    assert format_score_badge(0.92) == "🟢 92% (높음)"
+    assert format_deadline_dday("2026-12-03", today=datetime(2026, 11, 26).date()) == "2026-12-03 (D-7)"
+    assert format_deadline_dday("2026-11-26", today=datetime(2026, 11, 26).date()) == "2026-11-26 (D-Day)"
 
     notice = _make_notice(deadline="")
-    payload = format_notice_message(notice, score=0.876, summary="핵심 요약 문장")
+    payload = format_notice_message(
+        notice,
+        score=0.876,
+        summary="첫 번째 핵심 요약입니다. https://instagram.com/example ■ 두 번째 요약입니다. 3.",
+    )
 
+    assert payload["author"]["name"] == "🎓 SW융합 학사/장학 · 학사/장학"
     assert payload["title"] == notice.title
     assert payload["url"] == notice.url
-    assert payload["description"] == "핵심 요약 문장"
+    assert "• 첫 번째 핵심 요약입니다." in payload["description"]
+    assert "• 두 번째 요약입니다." in payload["description"]
+    assert "https://instagram.com" not in payload["description"]
+    assert "🏷️ `국제캠퍼스` `장학금`" in payload["description"]
     assert payload["color"] == HIGH_SCORE_COLOR
     assert len(payload["fields"]) == 3
-    assert payload["fields"][0] == {"name": "출처", "value": "swcon_academic", "inline": True}
-    assert payload["fields"][1] == {"name": "적합도", "value": "0.88", "inline": True}
-    assert payload["fields"][2] == {"name": "마감일", "value": "상시/미정", "inline": True}
+    assert payload["fields"][0] == {"name": "📌 출처", "value": "🎓 SW융합 학사/장학", "inline": True}
+    assert payload["fields"][1] == {"name": "🎯 적합도", "value": "🟢 88% (높음)", "inline": True}
+    assert payload["fields"][2] == {"name": "⏰ 마감일", "value": "상시/미정", "inline": True}
     assert "swcon_001" in payload["footer"]["text"]
 
 
@@ -98,16 +113,16 @@ def test_format_notice_message_truncates_limits_and_fallbacks() -> None:
     payload = format_notice_message(notice, score=0.40, summary=long_summary)
     assert len(payload["title"]) == EMBED_TITLE_MAX_LEN
     assert payload["title"].endswith("...")
-    assert len(payload["description"]) == EMBED_DESCRIPTION_MAX_LEN
-    assert payload["description"].endswith("...")
+    assert len(payload["description"]) <= EMBED_DESCRIPTION_MAX_LEN
+    assert "..." in payload["description"]
     assert len(payload["fields"][0]["value"]) == EMBED_FIELD_VALUE_MAX_LEN
     assert payload["color"] == LOW_SCORE_COLOR
 
     # Empty summary falls back to content, then title
     fallback_content = format_notice_message(_make_notice(content="본문 우선"), score=0.55, summary="  ")
-    assert fallback_content["description"] == "본문 우선"
+    assert "본문 우선" in fallback_content["description"]
     fallback_title = format_notice_message(
-        _make_notice(title="제목 폴백", content=""),
+        _make_notice(title="제목 폴백", content="", meta_tags=""),
         score=0.55,
         summary="",
     )
@@ -120,14 +135,15 @@ def test_build_discord_embed() -> None:
     embed = build_discord_embed(payload)
 
     assert isinstance(embed, discord.Embed)
+    assert embed.author.name == "🎓 SW융합 학사/장학 · 학사/장학"
     assert embed.title == notice.title
-    assert embed.description == "요약 테스트"
+    assert "요약 테스트" in (embed.description or "")
     assert embed.url == notice.url
     assert embed.color is not None
     assert embed.color.value == MEDIUM_SCORE_COLOR
     assert len(embed.fields) == 3
-    assert embed.fields[0].name == "출처"
-    assert embed.fields[0].value == notice.source
+    assert embed.fields[0].name == "📌 출처"
+    assert embed.fields[0].value == "🎓 SW융합 학사/장학"
     assert embed.footer.text is not None
     assert "swcon_001" in embed.footer.text
 
@@ -180,6 +196,7 @@ def test_notice_feedback_view_button_callbacks_persist_feedback(tmp_path: Path) 
         assert [btn.label for btn in view_pos.children if isinstance(btn, discord.ui.Button)] == [
             "관심 👍",
             "제외 👎",
+            "원문 보기",
         ]
 
         interaction_pos = MagicMock()
@@ -197,9 +214,18 @@ def test_notice_feedback_view_button_callbacks_persist_feedback(tmp_path: Path) 
 
     interaction_pos.response.edit_message.assert_awaited_once()
     interaction_neg.response.edit_message.assert_awaited_once()
-    assert all(
-        child.disabled for child in view_pos.children if isinstance(child, discord.ui.Button)
-    )
+    vote_buttons = [
+        child
+        for child in view_pos.children
+        if isinstance(child, discord.ui.Button) and child.style != discord.ButtonStyle.link
+    ]
+    link_buttons = [
+        child
+        for child in view_pos.children
+        if isinstance(child, discord.ui.Button) and child.style == discord.ButtonStyle.link
+    ]
+    assert len(vote_buttons) == 2 and all(child.disabled for child in vote_buttons)
+    assert len(link_buttons) == 1 and not link_buttons[0].disabled
 
     saved = load_feedback_df(feedback_csv)
     assert len(saved) == 2
@@ -232,7 +258,7 @@ def test_notice_discord_client_dry_run(tmp_path: Path) -> None:
     assert client.sent_messages[0]["notice_id"] == "dry_1"
     assert client.sent_messages[0]["channel_id"] == 987654321
     assert client.sent_messages[1]["notice_id"] == "dry_2"
-    assert client.sent_messages[1]["description"] == n2.content
+    assert n2.content in client.sent_messages[1]["description"]
 
 
 def test_notice_discord_client_live_send_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -76,6 +76,16 @@ class NoticeFeedbackView(discord.ui.View):
         self.feedback_csv = Path(feedback_csv)
         self.interested_button.custom_id = f"notice_fb:{notice.id}:1"[:100]
         self.exclude_button.custom_id = f"notice_fb:{notice.id}:0"[:100]
+        url = str(notice.url or "").strip()
+        if url.startswith(("http://", "https://")):
+            self.add_item(
+                discord.ui.Button(
+                    label="원문 보기",
+                    emoji="🔗",
+                    style=discord.ButtonStyle.link,
+                    url=url,
+                )
+            )
 
     async def _record_feedback(
         self,
@@ -94,7 +104,7 @@ class NoticeFeedbackView(discord.ui.View):
         append_feedback(self.feedback_csv, record)
 
         for child in self.children:
-            if isinstance(child, discord.ui.Button):
+            if isinstance(child, discord.ui.Button) and child.style != discord.ButtonStyle.link:
                 child.disabled = True
 
         await interaction.response.edit_message(
