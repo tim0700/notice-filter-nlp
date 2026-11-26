@@ -1,0 +1,16 @@
+[Unit]
+Description=Notice Filter NLP 24/7 Discord Bot & Daily Notice Alert Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/notice-filter-nlp
+EnvironmentFile=/home/ubuntu/notice-filter-nlp/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/notice-filter-nlp/.venv/bin/python scripts/run_alert_pipeline.py --daemon --daily-at 09:00 --timezone Asia/Seoul
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

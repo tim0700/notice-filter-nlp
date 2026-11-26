@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -122,3 +124,13 @@ class SentenceEmbedder:
         }
         meta_path.write_text(json.dumps(meta_payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return embeddings
+
+    def unload(self) -> None:
+        """Release the loaded Transformer model from RAM/VRAM between periodic daemon runs."""
+        if self._model is None:
+            return
+        self._model = None
+        gc.collect()
+        torch_mod = sys.modules.get("torch")
+        if torch_mod is not None and hasattr(torch_mod, "cuda") and torch_mod.cuda.is_available():
+            torch_mod.cuda.empty_cache()

@@ -1,0 +1,15 @@
+# 24/7 실운영 추론·알림 전용 경량 의존성 (Java / KoNLPy / EDA 시각화 제외)
+# CPU-only 환경(Oracle Cloud Free Tier 등)에서는 먼저 CPU PyTorch를 설치한 뒤 적용하세요:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+sentence-transformers>=3.0.0
+scikit-learn>=1.5.0
+networkx>=3.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+defusedxml>=0.7.1
+requests>=2.31.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+discord.py>=2.3.0
+pandas>=2.2.0

@@ -226,4 +226,7 @@ __marimo__/
 .local/
 scratch/
 data/embeddings/
+data/sent_notices.json
+data/latest_notices_store.csv
+data/feedback.csv
 

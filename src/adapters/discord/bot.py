@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import csv
+import logging
 import os
-from collections.abc import Sequence
-from datetime import datetime, timezone
+from collections.abc import Callable, Sequence
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import discord
 import pandas as pd
@@ -15,6 +18,8 @@ import pandas as pd
 from src.adapters.discord.formatter import build_discord_embed, format_notice_message
 from src.config import FEEDBACK_COLUMNS
 from src.schema import FeedbackRecord, NoticeRecord
+
+logger = logging.getLogger(__name__)
 
 NoticeBatchItem = tuple[NoticeRecord, float] | tuple[NoticeRecord, float, str]
 
@@ -133,6 +138,138 @@ class NoticeFeedbackView(discord.ui.View):
         await self._record_feedback(interaction, label=0, action_text="제외 👎")
 
 
+def _extract_link_url(components: Sequence[Any] | None) -> str:
+    """Extract the first URL link button target from existing message ActionRow components."""
+    for row in components or []:
+        for child in getattr(row, "children", []):
+            url = getattr(child, "url", None)
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                return url
+    return ""
+
+
+def parse_feedback_custom_id(custom_id: str) -> tuple[str, int] | None:
+    """Parse persistent button custom_id (`notice_fb:<notice_id>:<0|1>`) into (notice_id, label)."""
+    raw = str(custom_id or "").strip()
+    if not raw.startswith("notice_fb:"):
+        return None
+    body = raw[len("notice_fb:") :]
+    if ":" not in body:
+        return None
+    notice_id, label_str = body.rsplit(":", 1)
+    if not notice_id or label_str not in {"0", "1"}:
+        return None
+    return notice_id, int(label_str)
+
+
+def compute_next_delay_seconds(
+    now: datetime,
+    daily_at: str | None = "09:00",
+    interval_minutes: int | None = None,
+) -> float:
+    """Compute sleep seconds until the next periodic run (`interval_minutes` or daily `HH:MM`)."""
+    if interval_minutes is not None:
+        if interval_minutes <= 0:
+            raise ValueError(f"interval_minutes must be > 0, got {interval_minutes}")
+        return float(interval_minutes * 60)
+
+    raw_time = str(daily_at or "09:00").strip()
+    parts = raw_time.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"daily_at must be in HH:MM format, got {daily_at!r}")
+    hour, minute = int(parts[0]), int(parts[1])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"Invalid HH:MM time in daily_at: {daily_at!r}")
+
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target = target + timedelta(days=1)
+    return max(1.0, (target - now).total_seconds())
+
+
+def _resolve_timezone(timezone_name: str) -> timezone | ZoneInfo:
+    """Resolve an IANA timezone with KST (+09:00) fallback if system tzdata is unavailable."""
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        if timezone_name == "Asia/Seoul":
+            return timezone(timedelta(hours=9))
+        return timezone.utc
+
+
+def build_persistent_notice_view(
+    notice_id: str,
+    url: str = "",
+    *,
+    disabled: bool = False,
+) -> discord.ui.View:
+    """Build a stateless View (`timeout=None`) handled via `on_interaction` custom_id routing."""
+    view = discord.ui.View(timeout=None)
+    view.add_item(
+        discord.ui.Button(
+            label="관심 👍",
+            style=discord.ButtonStyle.success,
+            custom_id=f"notice_fb:{notice_id}:1"[:100],
+            disabled=disabled,
+        )
+    )
+    view.add_item(
+        discord.ui.Button(
+            label="제외 👎",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"notice_fb:{notice_id}:0"[:100],
+            disabled=disabled,
+        )
+    )
+    clean_url = str(url or "").strip()
+    if clean_url.startswith(("http://", "https://")):
+        view.add_item(
+            discord.ui.Button(
+                label="원문 보기",
+                emoji="🔗",
+                style=discord.ButtonStyle.link,
+                url=clean_url,
+            )
+        )
+    return view
+
+
+async def handle_persistent_feedback_interaction(
+    interaction: Any,
+    feedback_csv: str | Path = "data/feedback.csv",
+) -> bool:
+    """Handle persistent button clicks from surviving/restarted bot processes and log CSV feedback."""
+    if getattr(interaction, "type", None) != discord.InteractionType.component:
+        return False
+    data = getattr(interaction, "data", None) or {}
+    parsed = parse_feedback_custom_id(str(data.get("custom_id", "")))
+    if parsed is None:
+        return False
+
+    notice_id, label = parsed
+    action_text = "관심 👍" if label == 1 else "제외 👎"
+    record = FeedbackRecord(
+        notice_id=notice_id,
+        label=label,
+        source="discord",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        comment=action_text,
+    )
+    append_feedback(feedback_csv, record)
+
+    message = getattr(interaction, "message", None)
+    link_url = _extract_link_url(getattr(message, "components", None))
+    disabled_view = build_persistent_notice_view(notice_id, url=link_url, disabled=True)
+
+    response = getattr(interaction, "response", None)
+    if response is not None:
+        try:
+            await response.edit_message(content=f"피드백 기록 완료: {action_text}", view=disabled_view)
+        except Exception:
+            await response.send_message(f"피드백 기록 완료: {action_text}", ephemeral=True)
+    return True
+
+
 class NoticeDiscordClient:
     """Discord bot adapter for sending notice alerts and collecting Good/Skip feedback."""
 
@@ -167,6 +304,7 @@ class NoticeDiscordClient:
         summary: str = "",
         *,
         channel: Any | None = None,
+        persistent: bool = False,
     ) -> dict[str, Any]:
         """Send a formatted notice embed with feedback buttons or record it in dry-run mode."""
         payload = format_notice_message(notice, score=score, summary=summary)
@@ -183,7 +321,11 @@ class NoticeDiscordClient:
 
         if channel is not None:
             embed = build_discord_embed(payload)
-            view = NoticeFeedbackView(notice, feedback_csv=self.feedback_csv)
+            view = (
+                build_persistent_notice_view(notice.id, notice.url)
+                if persistent
+                else NoticeFeedbackView(notice, feedback_csv=self.feedback_csv)
+            )
             await channel.send(embed=embed, view=view)
             self.sent_messages.append(entry)
             return entry
@@ -222,3 +364,96 @@ class NoticeDiscordClient:
             await client.close()
 
         return results
+
+    async def run_daemon(
+        self,
+        fetch_batch_fn: Callable[[], Sequence[NoticeBatchItem]],
+        *,
+        daily_at: str | None = "09:00",
+        interval_minutes: int | None = None,
+        timezone_name: str = "Asia/Seoul",
+        run_on_startup: bool = False,
+        on_dispatched: Callable[[list[str]], None] | None = None,
+    ) -> None:
+        """Run a 24/7 Discord bot handling persistent feedback buttons and scheduled notice dispatches."""
+        if self.dry_run:
+            raise ValueError("Daemon mode requires dry_run=False.")
+
+        token = self._resolve_token()
+        tz = _resolve_timezone(timezone_name)
+        client = self._create_discord_client()
+        scheduler_task: asyncio.Task[None] | None = None
+
+        async def _dispatch_once(channel: Any) -> None:
+            try:
+                raw_batch = await asyncio.to_thread(fetch_batch_fn)
+                unpacked = [_unpack_batch_item(item) for item in raw_batch]
+                if not unpacked:
+                    logger.info("Scheduled cycle: no new notices above threshold.")
+                    return
+
+                dispatched_ids: list[str] = []
+                for notice, score, summary in unpacked:
+                    await self.send_notice(
+                        notice,
+                        score,
+                        summary,
+                        channel=channel,
+                        persistent=True,
+                    )
+                    dispatched_ids.append(notice.id)
+
+                if on_dispatched is not None and dispatched_ids:
+                    await asyncio.to_thread(on_dispatched, dispatched_ids)
+                logger.info("Scheduled cycle: dispatched %d notice(s).", len(dispatched_ids))
+            except Exception:
+                logger.exception("Scheduled notice cycle failed; will retry at next interval.")
+
+        async def _scheduler_loop() -> None:
+            await client.wait_until_ready()
+            channel = client.get_channel(self.channel_id)
+            if channel is None:
+                channel = await client.fetch_channel(self.channel_id)
+
+            if run_on_startup:
+                await _dispatch_once(channel)
+
+            while not client.is_closed():
+                delay = compute_next_delay_seconds(
+                    datetime.now(tz),
+                    daily_at=daily_at,
+                    interval_minutes=interval_minutes,
+                )
+                logger.info(
+                    "Next notice crawl & alert cycle scheduled in %.0f seconds (~%.1f hours).",
+                    delay,
+                    delay / 3600.0,
+                )
+                await asyncio.sleep(delay)
+                if client.is_closed():
+                    break
+                await _dispatch_once(channel)
+
+        @client.event
+        async def on_ready() -> None:
+            nonlocal scheduler_task
+            logger.info("Discord daemon logged in as %s (channel=%s)", client.user, self.channel_id)
+            if scheduler_task is None or scheduler_task.done():
+                scheduler_task = asyncio.create_task(_scheduler_loop())
+
+        @client.event
+        async def on_interaction(interaction: discord.Interaction) -> None:
+            try:
+                await handle_persistent_feedback_interaction(
+                    interaction,
+                    feedback_csv=self.feedback_csv,
+                )
+            except Exception:
+                logger.exception("Failed to handle persistent Discord feedback interaction.")
+
+        try:
+            async with client:
+                await client.start(token)
+        finally:
+            if scheduler_task is not None and not scheduler_task.done():
+                scheduler_task.cancel()

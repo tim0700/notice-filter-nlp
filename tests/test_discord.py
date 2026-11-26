@@ -17,8 +17,11 @@ from src.adapters.discord import (
     NoticeFeedbackView,
     append_feedback,
     build_discord_embed,
+    compute_next_delay_seconds,
     format_notice_message,
+    handle_persistent_feedback_interaction,
     load_feedback_df,
+    parse_feedback_custom_id,
 )
 from src.adapters.discord.cli import load_notice_batch, run_cli
 from src.adapters.discord.formatter import (
@@ -367,3 +370,49 @@ def test_cli_load_batch_with_score_summary_and_live_mode(
 
     assert code == 0
     mock_send_batch.assert_awaited_once()
+
+
+def test_persistent_feedback_helpers_and_scheduler_timing(tmp_path: Path) -> None:
+    assert parse_feedback_custom_id("notice_fb:swcon_academic_100:1") == ("swcon_academic_100", 1)
+    assert parse_feedback_custom_id("notice_fb:prefix:with:colon:0") == ("prefix:with:colon", 0)
+    assert parse_feedback_custom_id("other_button:1") is None
+    assert parse_feedback_custom_id("notice_fb:empty_id:") is None
+
+    now = datetime(2026, 11, 26, 8, 30, 0)
+    assert compute_next_delay_seconds(now, daily_at="09:00") == pytest.approx(1800.0)
+    after = datetime(2026, 11, 26, 9, 15, 0)
+    assert compute_next_delay_seconds(after, daily_at="09:00") == pytest.approx(85500.0)
+    assert compute_next_delay_seconds(now, interval_minutes=15) == pytest.approx(900.0)
+
+    feedback_csv = tmp_path / "persistent_feedback.csv"
+    link_child = MagicMock()
+    link_child.url = "https://swcon.khu.ac.kr/notice/100"
+    action_row = MagicMock()
+    action_row.children = [link_child]
+
+    interaction = MagicMock()
+    interaction.type = discord.InteractionType.component
+    interaction.data = {"custom_id": "notice_fb:swcon_academic_100:1"}
+    interaction.message = MagicMock()
+    interaction.message.components = [action_row]
+    interaction.response = AsyncMock()
+
+    async def _run() -> bool:
+        handled = await handle_persistent_feedback_interaction(interaction, feedback_csv=feedback_csv)
+        other = MagicMock()
+        other.type = discord.InteractionType.application_command
+        not_handled = await handle_persistent_feedback_interaction(other, feedback_csv=feedback_csv)
+        assert not not_handled
+        return handled
+
+    assert asyncio.run(_run()) is True
+    interaction.response.edit_message.assert_awaited_once()
+    edited_view = interaction.response.edit_message.call_args.kwargs["view"]
+    buttons = [c for c in edited_view.children if isinstance(c, discord.ui.Button)]
+    assert len(buttons) == 3
+    assert buttons[0].disabled is True and buttons[1].disabled is True
+    assert buttons[2].style == discord.ButtonStyle.link and buttons[2].url == "https://swcon.khu.ac.kr/notice/100"
+
+    saved = load_feedback_df(feedback_csv)
+    assert saved["notice_id"].tolist() == ["swcon_academic_100"]
+    assert saved["label"].tolist() == [1]
