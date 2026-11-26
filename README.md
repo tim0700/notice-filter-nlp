@@ -48,23 +48,24 @@ notice-filter-nlp/
 │   ├── raw_notices.csv           # 수집·정규화 통합 공지 979건
 │   ├── silver_labels.csv         # Claude Haiku Silver 라벨 979건
 │   └── splits/                   # 누수 방지 3-way 분할 (train/val/test_gold/summary_eval_gold)
+├── deploy/                       # Oracle Cloud 24/7 상시 데몬 배포 가이드·경량 의존성·systemd 유닛
 ├── docs/
 │   ├── 01_SRS_and_RTM.md
 │   ├── 02_Architecture_and_Contract.md
 │   ├── 03_ADR.md
 │   └── 04_Experiment_and_Error_Report.md
-├── notebooks/                    # 최종 제출용 파이프라인 노트북
+├── notebooks/                    # 최종 제출용 파이프라인 노트북 (CPU Restart & Run All 검증 완료)
 ├── results/                      # Val/Test 정량 결과 JSON, 오류 사례 CSV, 시각화 PNG
-├── scripts/                      # 수집, 분할, 라벨링, 임베딩 캐시, 실험, Discord 미리보기 CLI
+├── scripts/                      # 수집, 분할, 라벨링, 임베딩 캐시, 실험, 24/7 알림 데몬 CLI
 ├── src/
 │   ├── config.py                 # .env 자동 탐색(Worktree 공유), profile 로더, CUDA/CPU 분기
 │   ├── schema.py                 # 9컬럼 NoticeRecord & 5컬럼 FeedbackRecord 계약
 │   ├── collectors/               # 데이터 수집 어댑터 (swcon, goodjob, seongnam, youth_api)
 │   ├── preprocess/               # 한국어 정제, Okt 토크나이저, 불용어, TF-IDF, WordCloud
-│   ├── models/                   # SentenceEmbedder, Scorer 계층, Raw & Preprocessed TextRank
+│   ├── models/                   # SentenceEmbedder(+unload), Scorer 계층, Raw & Preprocessed TextRank
 │   ├── eval/                     # 분류 지표(F1), 한국어 ROUGE, Judge 일치율, 층화 분할
-│   └── adapters/discord/         # Discord Embed 알림 및 피드백(feedback.csv) 수집 어댑터
-├── tests/                        # 오프라인 계약 및 단위 테스트 (44 tests)
+│   └── adapters/discord/         # Discord Embed 알림 및 영속 버튼 피드백(feedback.csv) 데몬 어댑터
+├── tests/                        # 오프라인 계약 및 단위 테스트 (48 tests)
 ├── .env.example
 ├── pyproject.toml
 └── requirements.txt
@@ -94,3 +95,13 @@ Copy-Item .env.example .env
 # .env에 YOUTH_POLICY_API_KEY, DISCORD_BOT_TOKEN, DISCORD_CHANNEL_ID, ANTHROPIC_API_KEY 등 입력
 .\.venv\Scripts\python.exe -m pytest -v
 ```
+
+### 24/7 상시 Discord 피드백 & 일일 자동 알림 실행
+```powershell
+# 1회 드라이런 (신규 공지 수집 -> 분류 -> 전처리 요약 -> 콘솔 확인)
+.\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --once
+
+# 24/7 상시 봇 데몬 (매일 09:00 KST 자동 수집·알림 + 상시 버튼 피드백 수집 및 재학습)
+.\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --daemon --daily-at 09:00
+```
+Oracle Cloud Ubuntu 서버 상시 배포 절차는 [deploy/ORACLE_DEPLOY.md](deploy/ORACLE_DEPLOY.md)를 참고하세요.

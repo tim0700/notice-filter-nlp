@@ -9,17 +9,22 @@ flowchart LR
         DSC["src/adapters/discord/\n(Embed 알림 & Good/Skip 버튼)"]
     end
 
-    subgraph DataContract["Static Data & Config Contracts"]
+    subgraph DataContract["Static Data & Runtime State Contracts"]
         PROF["config/profile.yaml\n(프로필·쿼리·Judge Rubric)"]
         RAW["data/raw_notices.csv\n(9컬럼 Canonical Schema)"]
         FB["data/feedback.csv\n(5컬럼 피드백 로그)"]
+        SENT["data/sent_notices.json\n(기발송 ID 중복 방지 상태)"]
         CACHE["data/embeddings/*.npy\n(임베딩 캐시)"]
     end
 
     subgraph Core["NLP Core (Pure Offline Reproducible)"]
         PRE["src/preprocess/\n(정제·Okt·불용어·TF-IDF)"]
-        MOD["src/models/\n(SentenceEmbedder, Scorer, TextRank)"]
+        MOD["src/models/\n(SentenceEmbedder, Scorer, Raw/Preprocessed TextRank)"]
         EVAL["src/eval/\n(F1, 한국어 ROUGE, Kappa, 분할)"]
+    end
+
+    subgraph Runtime["24/7 Alert & Feedback Orchestrator"]
+        DAEMON["scripts/run_alert_pipeline.py\n(--once / --daemon --daily-at 09:00)"]
     end
 
     COL -->|writes| RAW
@@ -28,8 +33,10 @@ flowchart LR
     CACHE <--> MOD
     FB --> MOD
     MOD --> EVAL
-    MOD -->|filtered notices + summary| DSC
-    DSC -->|appends| FB
+    DAEMON -->|collects & deduplicates| SENT
+    DAEMON -->|retrains with feedback & summarizes| MOD
+    DAEMON -->|dispatches persistent embeds| DSC
+    DSC -->|on_interaction appends| FB
 ```
 
 ---
@@ -49,10 +56,11 @@ sequenceDiagram
     P->>D: 공지 로드 및 텍스트 조합(title / meta_title / full)
     P->>S: 임베딩 벡터(캐시 활용) 및 TF-IDF 피처 전달
     S->>S: Cold-Start 코사인 또는 Rocchio/LogReg 점수 산출
-    S->>S: 본문 5문장 이상 합격 공지 TextRank 2~3줄 요약
-    S->>B: 적합 공지 Payload 전달
-    B->>F: 사용자 Good(1)/Skip(0) 클릭 시 5컬럼 CSV append
-    F-->>S: Phase 2 실험(Rocchio, LogReg) 학습 데이터로 재주입
+    S->>S: 본문 5문장 이상 합격 공지 PreprocessedTextRank 2~3줄 요약
+    S->>B: 적합 공지 Payload(영속 버튼 포함) 전달 및 sent_notices.json 기록
+    S->>P: 추론 완료 후 SentenceEmbedder.unload() 메모리 해제
+    B->>F: 사용자 관심(1)/제외(0) 클릭 시 on_interaction으로 5컬럼 CSV append
+    F-->>S: 다음 주기(매일 09:00 KST) 자동 재학습(가중치 3x) 및 Phase 2 실험 반영
 ```
 
 ---

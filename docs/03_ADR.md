@@ -49,3 +49,27 @@
   2. 동일 Hold-out Test Set(150건)에서 베이스라인 대비 최신 모델의 F1 변화량을 Phase 2 통제 실험(한 번에 하나씩 변경)으로 측정한다.
   3. 대용량 모델의 CPU 재현 시간 단축을 위해 `encode_cached()`로 `data/embeddings/*.npy` 디스크 캐시를 지원한다.
 - **결과**: 강의 기준 준수(베이스라인 구현·비교)와 최신 NLP 기술 적용 두 요구사항을 정량 근거와 함께 동시에 충족한다.
+
+---
+
+## ADR-05: 공지 구조 인식 TextRank 전처리 (`PreprocessedTextRankSummarizer`)
+
+- **상태**: 채택됨 (Phase 2 오류 분석 `NTF-24` 기반)
+- **배경**: 실제 장학금·복지 공지를 Discord로 발송 검증한 결과, 원문 `TextRank`가 (1) 마침표(`.`) 없이 `❍/•/[사업개요]` 개조식으로 작성된 공지를 분리하지 못해 1,000자 이상을 통째로 반환하고, (2) 제출서류 체크리스트(`1부`, `건강보험료 납부확인서`, `성적증명서`)의 단어 반복으로 TF-IDF PageRank 중심도가 편향되는 문제가 확인됨.
+- **결정**:
+  1. 기존 `TextRankSummarizer` 시그니처와 Baseline 동작은 그대로 유지(`tests/test_contracts.py` 보존)하고, 서브클래스 `PreprocessedTextRankSummarizer`를 추가한다.
+  2. 개조식(`■/❍/•/1)`·`[섹션]`) 경계 정규화(날짜 `2026. 11. 21.` 보존), URL/이메일/제출서류·문의처 보일러플레이트 필터링(+ 보수적 fallback), 도입부·핵심키워드(`대상/지원/일정/장학/시상`) 가중치를 적용한다.
+- **결과**: 20건 Human Summary Gold 기준 **Okt ROUGE-L `0.3802 → 0.4173` (`+0.0370`)**, **Space ROUGE-L `0.3482 → 0.3808` (`+0.0326`)** 개선을 정량 입증함.
+
+---
+
+## ADR-06: 24/7 상시 Discord 피드백 데몬 · 순수 Python 서빙 · 추론 후 모델 메모리 해제
+
+- **상태**: 채택됨 (Phase 3 Oracle Cloud ARM64 배포)
+- **배경**: 일회성 `send_batch()` 호출 후 봇 연결을 종료하면 사용자가 추후 Discord에서 `관심 👍 / 제외 👎` 버튼을 눌렀을 때 상호작용이 실패해 실시간 피드백 루프가 끊기며, 상시 클라우드 서버에서는 JVM(`KoNLPy`) 의존성과 유휴 RAM 점유를 최소화해야 함.
+- **결정**:
+  1. `scripts/run_alert_pipeline.py --daemon --daily-at 09:00` 통합 러너를 구축해 Discord 어댑터와 NLP 코어 간 디커플링 계약을 유지하면서 매일 지정 시각 자동 수집·중복 제외(`data/sent_notices.json`)·피드백 반영 재학습(`feedback_weight=3`)·요약·알림을 수행한다.
+  2. `src/adapters/discord/bot.py`에 `on_interaction` 기반 영속 버튼 핸들러(`notice_fb:<id>:<0|1>`)를 추가해 봇 재시작 후에도 클릭 피드백이 `data/feedback.csv`에 즉시 기록되도록 한다.
+  3. 실운영 추론 경로는 `KoNLPy/Java` 없는 경량 의존성(`deploy/requirements-serve.txt`)으로 분리하고, 매 주기 추론 종료 직후 `SentenceEmbedder.unload()`로 모델 가중치를 메모리에서 해제한다.
+  4. Oracle Cloud(Ubuntu ARM64, `Linger=yes`)에서는 root 권한 없이 격리된 사용자 단위 `systemd --user` 서비스(`notice-filter.service`)로 운영해 기존 서버 서비스와의 간섭을 원천 차단한다.
+- **결과**: 기존 서버 환경에 무영향으로 24시간 실시간 피드백 수집 + 매일 09:00 KST 자동 공지 알림이 상시 동작한다.

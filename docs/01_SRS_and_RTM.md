@@ -13,9 +13,9 @@
 | `FR-02` | 한국어 텍스트 정제·키워드 분석 | 정규식 정제, `KoNLPy Okt` 형태소/명사 분석, 도메인 불용어 제거, `TF-IDF` 키워드 추출 및 `WordCloud` 시각화 |
 | `FR-03` | Cold-Start 임베딩 선별 | `config/profile.yaml` 관심/제외 쿼리와 공지 간 코사인 유사도 계산 (`jhgan/ko-sroberta-multitask` 기준선) |
 | `FR-04` | 사용자 피드백 기반 단계적 성능 개선 | 입력 구성·임계값 튜닝 → 소량 피드백 `Rocchio` 벡터 보정 → 누적 피드백 분류(`SBERT + LogReg` vs `TF-IDF + LogReg`) + 최신 한국어 임베딩(`KURE-v1` / `bge-m3`) 비교 |
-| `FR-05` | 장문 공지 추출 요약 및 한국어 ROUGE 평가 | 본문 5문장 이상 공지 대상 `TextRank`(`networkx + TF-IDF`) 2~3줄 요약 및 커스텀 한국어 토크나이저(공백·Okt) 기반 `ROUGE-1/ROUGE-L` 측정 |
+| `FR-05` | 장문 공지 추출 요약 및 한국어 ROUGE 평가 | 본문 5문장 이상 공지 대상 `TextRank` (Raw) 및 `PreprocessedTextRankSummarizer`(개조식·서류 제거·핵심키워드 가중치) 2~3줄 요약과 커스텀 한국어 토크나이저(공백·Okt) 기반 `ROUGE-1/ROUGE-L` 측정 |
 | `FR-06` | 정량 검증·오류 분석·데이터 누수 방지 | 3-way 층화 분할(Hold-out Test 150 / Val 100 / Train ~65% + Summary Eval 20), LLM-as-a-Judge(Silver) vs Human Gold 일치율(Cohen's Kappa), 오류 사례 3건 이상 분석 및 Jira `버그` 연동 |
-| `FR-07` | Discord 알림 및 피드백 수집 어댑터 | 선별 공지·요약 Embed 발송 및 사용자 Good(1)/Skip(0) 피드백을 `data/feedback.csv`로 기록(NLP Core와 독립 분리) |
+| `FR-07` | 24/7 Discord 알림 및 영속 피드백 루프 | 선별 공지·요약 Embed 발송, `on_interaction` 기반 상시 `관심(1)/제외(0)` 피드백 `data/feedback.csv` 저장, `data/sent_notices.json` 중복 방지 및 매일 `09:00 KST` 자동 수집·재학습·알림 데몬 (`scripts/run_alert_pipeline.py`) |
 
 ---
 
@@ -53,3 +53,5 @@
 | `FR-02` | `NTF-10` / `NTF-13` | `wt-preprocess` (`feat/NTF-13-preprocess`) | `src/preprocess/` | `tests/test_preprocess.py` |
 | `FR-03`, `FR-04`, `FR-05`, `FR-06`, `NFR-01` | `NTF-10` / `NTF-14` | `wt-nlp-core` (`feat/NTF-14-nlp-core`) | `src/models/`, `src/eval/` | `tests/test_models.py`, `tests/test_eval.py` |
 | `FR-07`, `NFR-03` | `NTF-10` / `NTF-15` | `wt-discord` (`feat/NTF-15-discord`) | `src/adapters/discord/` | `tests/test_discord.py` |
+| `FR-04`, `FR-05`, `FR-06`, `NFR-01` | `NTF-16` / `NTF-17`~`NTF-24` | `main` (Phase 2 실험·버그·노트북) | `scripts/run_experiments.py`, `src/models/summarizer.py`, `notebooks/notice_filter_pipeline.ipynb` | `results/final_test_results.json`, CPU 노트북 완주 (`8/8` 0에러) |
+| `FR-07`, `NFR-02`, `NFR-03` | `NTF-25` | `main` (Phase 3 운영·배포) | `scripts/run_alert_pipeline.py`, `src/adapters/discord/bot.py`, `src/models/embedder.py`, `deploy/` | `tests/test_alert_pipeline.py` (48 passed), `risuai-server` `notice-filter.service` (`active (running)`) |
