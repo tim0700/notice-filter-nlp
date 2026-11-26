@@ -1,0 +1,23 @@
+# CPU/GPU 환경 공통 의존성 (제출 노트북 CPU 재현성 보장)
+# RTX 4070 Ti GPU 가속이 필요한 경우 아래 명령으로 PyTorch CUDA 빌드를 별도 설치하세요:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+torch>=2.0.0
+sentence-transformers>=3.0.0
+konlpy>=0.6.0
+scikit-learn>=1.5.0
+networkx>=3.0
+rouge-score>=0.1.2
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+requests>=2.31.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+anthropic>=0.40.0
+discord.py>=2.3.0
+pandas>=2.2.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+wordcloud>=1.9.0
+koreanize-matplotlib>=0.1.1
+ipykernel>=6.29.0
+pytest>=8.0.0

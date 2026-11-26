@@ -1,0 +1,51 @@
+# 03. 아키텍처 의사결정 기록 (ADR)
+
+## ADR-01: Python 3.11 공유 `.venv` 및 CPU/CUDA 자동 분기 + 플랫폼 중립 `requirements.txt`
+
+- **상태**: 채택됨 (Phase 0)
+- **배경**: 로컬 개발 PC에는 Python 3.10~3.14와 RTX 4070 Ti(CUDA)가 함께 존재하지만, PyTorch CUDA 빌드·`JPype1(KoNLPy)`·`sentence-transformers` 간 안정 호환성과 제출 노트북의 CPU 전용 평가 환경(`Restart & Run All`)을 동시에 만족해야 함.
+- **결정**:
+  1. 모든 Worktree가 `C:\Users\LEE\notice-filter-nlp\.venv`(Python 3.11.9) 단일 인터프리터를 공유한다.
+  2. `requirements.txt`에는 `+cu124` 태그가 없는 일반 `torch>=2.0.0`만 기록해 CPU 환경 `pip install -r requirements.txt` 실패를 방지하고, GPU 설치 명령은 `README.md`로 분리한다.
+  3. 런타임에서는 `src.config.get_device()`가 `torch.cuda.is_available()`을 점검해 `"cuda"` 또는 `"cpu"`를 자동 선택한다.
+- **결과**: Worktree별 2.4GB PyTorch 중복 설치를 제거하고, 평가자 CPU 환경에서도 동일 코드가 재현된다.
+
+---
+
+## ADR-02: `goodjob` INFO21 로그인 크롤링 배제 (공개 목록 수집 한정)
+
+- **상태**: 채택됨 (Data Spike 실증 기반)
+- **배경**: 경희대학교 미래인재센터(`goodjob.khu.ac.kr`)의 채용·비교과 상세 본문을 로그인 크롤링할지 여부를 6건 실측 샘플로 점검함.
+- **근거 (Spike 실측)**:
+  1. **이미지 포스터 비중**: 점검한 6건 중 2건(33%, 핵심 IT 공고인 NHN Cloud 포함)의 모집요강 전체가 텍스트 없는 통짜 이미지 포스터로 구성되어 HTML 본문 추출의 실익이 낮음.
+  2. **보일러플레이트 및 개인정보 노출**: 모든 상세 페이지 상단에 미래인재센터 공통 안내 박스가 반복되어 임베딩 노이즈를 유발하며, 채용 담당자 개인 이메일이 원문에 포함됨.
+  3. **계정 보안 및 약관 리스크**: 학교 통합계정(INFO21) 자격증명을 `.env`에 보관해 로그인 세션을 자동화하는 것은 권한 범위가 과도함.
+- **결정**: `goodjob` 3개 게시판(`s4_1`, `s3_3`, `s3_2`)은 `robots.txt`가 허용하는 **비로그인 공개 목록(제목 + 카테고리/캠퍼스/기업규모/직무 메타 + 마감일)**만 수집한다. `.env`에는 INFO21 계정을 절대 저장하지 않는다.
+- **후속 확장**: 이미지 포스터 기반 채용 공고 파싱은 향후 OCR/VLM 파이프라인 확장 과제로 분리한다.
+
+---
+
+## ADR-03: LLM-as-a-Judge(Silver) + Human Gold 3-Way 층화 분할로 데이터 누수 방지
+
+- **상태**: 채택됨 (Phase 0)
+- **배경**: 600~1,000건 공지에 대해 일관된 정답지를 확보하되, 모델 튜닝·학습 과정에 평가 데이터가 섞이는 Data Leakage와 LLM 편향 의존을 차단해야 함.
+- **결정**:
+  1. 데이터셋을 `(소스 그룹, 라벨)` 기준 3-way 층화 분할한다.
+     - **Hold-out Test Set (150건, ~20%)**: 100% 사용자 직접 채점(**Human Gold**). 최종 평가와 오류 분석에만 사용하며 학습·임계값 튜닝에 절대 사용하지 않는다.
+     - **Validation Set (100건, ~15%)**: 임계값, Rocchio $\alpha/\beta$, LogReg $C$ 튜닝 전용.
+     - **Train / Feedback Pool (~65%)**: `config/profile.yaml`의 `judge_rubric`을 적용한 **LLM-as-a-Judge Silver 라벨링**으로 피드백 누적 시뮬레이션 및 분류기 학습에 사용.
+     - **Summary Eval Set (20건, 별도)**: 본문 5문장 이상 공지 대상 사용자 정답 요약 작성 후 ROUGE 평가.
+  2. Hold-out Test Set을 통해 LLM Judge vs Human Gold 간 **Accuracy 및 Cohen's Kappa**를 반드시 공개 검증한다.
+- **결과**: 추론 파이프라인은 LLM API 없이 완전 오프라인으로 동작하며, 정량 지표의 신뢰성을 방어할 수 있다.
+
+---
+
+## ADR-04: Pluggable 문장 임베딩 구조 (강의 베이스라인 + 최신 한국어 임베딩 비교)
+
+- **상태**: 채택됨 (Phase 0)
+- **배경**: 강의 교안의 표준 모델은 `jhgan/ko-sroberta-multitask`(2021, 128토큰 제한)이나, 최신 한국어 임베딩 모델(`nlpai-lab/KURE-v1` 또는 `BAAI/bge-m3`)은 긴 컨텍스트(8192토큰)와 한·영 IT 직무명(`Backend`, `Unity`, `Cloud`) 이해력이 크게 향상됨.
+- **결정**:
+  1. `src/models/embedder.py::SentenceEmbedder`가 `model_name`을 인자로 받아 강의 베이스라인(`jhgan/ko-sroberta-multitask`)과 최신 모델(`nlpai-lab/KURE-v1` / `BAAI/bge-m3`)을 동일 인터페이스로 교체 실행하도록 설계한다.
+  2. 동일 Hold-out Test Set(150건)에서 베이스라인 대비 최신 모델의 F1 변화량을 Phase 2 통제 실험(한 번에 하나씩 변경)으로 측정한다.
+  3. 대용량 모델의 CPU 재현 시간 단축을 위해 `encode_cached()`로 `data/embeddings/*.npy` 디스크 캐시를 지원한다.
+- **결과**: 강의 기준 준수(베이스라인 구현·비교)와 최신 NLP 기술 적용 두 요구사항을 정량 근거와 함께 동시에 충족한다.
