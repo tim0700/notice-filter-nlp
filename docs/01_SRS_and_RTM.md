@@ -30,21 +30,7 @@
 
 ---
 
-## 4. 평가 항목(100점) 및 요구사항 매핑
-
-| 평가 항목 (배점) | 매핑 요구사항 | 주요 산출물 |
-|---|---|---|
-| 문제 정의 (10) | 문제 정의 1문장, `config/profile.yaml` | `docs/01_SRS_and_RTM.md`, `README.md` |
-| 데이터와 전처리 (15) | `FR-01`, `FR-02`, `NFR-02` | `src/collectors/`, `src/preprocess/`, `docs/03_ADR.md` (ADR-02) |
-| NLP 기능 적용 (20) | `FR-03`, `FR-04`, `FR-05` | `src/models/` (임베딩 검색·분류·TextRank 3기능 결합) |
-| 결과 검증 (20) | `FR-04`, `FR-05`, `FR-06` | `src/eval/metrics.py`, `docs/04_Experiment_and_Error_Report.md` |
-| 오류 분석 (15) | `FR-06`, Jira `버그` 티켓 | `docs/04_Experiment_and_Error_Report.md`, Jira `NTF` `버그` 이슈 |
-| 시각화·전달력 (10) | `FR-02`, `FR-06`, 발표 PPT | WordCloud, 혼동행렬, 실험별 F1 비교 차트, PPT |
-| 재현성·정리 (10) | `NFR-01`, `NFR-04` | `README.md`, `requirements.txt`, 최종 `.ipynb` (`Restart & Run All`) |
-
----
-
-## 5. 요구사항 추적 매트릭스 (RTM)
+## 4. 요구사항 추적 매트릭스 (RTM)
 
 | Req ID | Jira Epic / Task | Worktree / 브랜치 | 구현 모듈 | 검증 테스트 |
 |---|---|---|---|---|
