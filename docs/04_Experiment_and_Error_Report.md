@@ -1,51 +1,77 @@
 # 04. 실험 결과 및 오류 분석 리포트
 
-> 본 문서는 Phase 1 완료 후 Baseline 평가부터 Phase 2 단계적 개선 루프의 정량 지표와 오류 사례를 기록하는 살아있는 리포트입니다.
-> **실험 원칙**: 한 번에 하나의 변수만 변경하여 동일한 Hold-out Test Set(150건, Human Gold)에서 성능을 비교한다.
+> 본 문서는 Validation Set(`val.csv`, n=100) 단독 튜닝 후 잠금(lock)된 설정을 동일한 Hold-out Test Set(`test_gold.csv`, n=150 Human Gold)에 1회 평가한 정량 지표와 실제 오류 사례 분석 리포트입니다.
+> **실험 원칙**: 데이터 누수(Leakage) 방지를 위해 Test Set에 대한 재튜닝을 금지하고, 한 번에 하나의 변수만 변경하여 통제 비교한다.
 
 ---
 
-## 1. 데이터셋 및 라벨 신뢰도 검증 (Phase 1 후 작성)
+## 1. 데이터셋 및 라벨 신뢰도 검증
 
-- 수집 총량: `(TBD) 건` (6개 필수 소스 + 선택 온통청년 API)
-- 3-way 층화 분할:
-  - Train / Feedback Pool: `(TBD) 건` (LLM-as-a-Judge Silver)
-  - Validation Set: `100 건`
-  - Hold-out Test Set: `150 건` (Human Gold)
-  - Summary Eval Set: `20 건` (Human 참조 요약)
-- **LLM-as-a-Judge vs Human Gold 일치율** (Test Set 일부 또는 교차 검증 구간):
-  - Accuracy: `(TBD)` / Cohen's Kappa: `(TBD)`
+- **수집 총량**: `979 건` (고유 정규화 공지)
+  - 필수 6개 소스 + 선택 1개 소스: `swcon_academic`(150), `swcon_career`(150), `goodjob_extracurricular`(150), `goodjob_general`(150), `goodjob_recommend`(150), `seongnam_youth`(79), `youth_api`(150)
+- **3-way 층화 분할** (`data/splits/`):
+  - **Train / Feedback Pool (`train.csv`)**: `729 건` (Positive `323` / Negative `406`, Claude Haiku Silver)
+  - **Validation Set (`val.csv`)**: `100 건` (Positive `45` / Negative `55`)
+  - **Hold-out Test Set (`test_gold.csv`)**: `150 건` (**Human Gold 직접 채점**: 관심 `72` / 제외 `78`)
+  - **Summary Eval Set (`summary_eval_20.csv`)**: `20 건` (5문장 이상 다문장 공지 소스별 균등 추출, **Human Gold 참조 요약 20건 완료**)
+- **LLM-as-a-Judge (`claude-haiku-4-5-20251001`) vs Human Gold 일치율 (`n=150`)**:
+  - **Accuracy**: `0.8400` (`84.0%`, 126/150 일치)
+  - **Cohen's Kappa**: `0.6785` (Substantial Agreement — Train Silver 피드백 풀 신뢰도 입증)
 
 ---
 
-## 2. 단계적 선별 모델 비교 실험 (Hold-out Test Set, n=150)
+## 2. 단계적 선별 모델 비교 실험 (`Hold-out Test Set`, `n=150` Human Gold)
 
-| 실험 단계 | Jira 티켓 | 변경 사항 (단일 변수) | Positive F1 | Precision | Recall | Accuracy | 비고 |
-|---|---|---|---:|---:|---:|---:|---|
-| Exp 0 (Baseline) | `NTF-14` | `ko-sroberta` 프로필 코사인 유사도 (`title` 기반, 피드백 0건) | `(TBD)` | `(TBD)` | `(TBD)` | `(TBD)` | Cold Start 기준선 |
-| Exp 1 (Input/Thresh) | `(TBD)` | 입력 구성(`meta_title`) 및 Val 튜닝 임계값 적용 | `(TBD)` | `(TBD)` | `(TBD)` | `(TBD)` | 메타 태그 반영 |
-| Exp 2 (Rocchio) | `(TBD)` | 소량 피드백 Rocchio 벡터 보정 ($\alpha, \beta$ Val 튜닝) | `(TBD)` | `(TBD)` | `(TBD)` | `(TBD)` | 소량 피드백 적응 |
-| Exp 3a (대조군) | `(TBD)` | 누적 피드백 `TF-IDF + LogisticRegression` | `(TBD)` | `(TBD)` | `(TBD)` | `(TBD)` | 강의 교안 대조군 |
-| Exp 3b (누적 ML) | `(TBD)` | 누적 피드백 `ko-sroberta + LogisticRegression` | `(TBD)` | `(TBD)` | `(TBD)` | `(TBD)` | 밀집 임베딩 분류 |
-| Exp 4 (최신 NLP) | `(TBD)` | 최신 한국어 임베딩 (`nlpai-lab/KURE-v1` 또는 `BAAI/bge-m3`) 적용 | `(TBD)` | `(TBD)` | `(TBD)` | `(TBD)` | 128토큰 한계·영문 직무 개선 검증 |
+| 실험 단계 | Jira 티켓 | 변경 사항 (단일 변수) | Positive F1 | Precision | Recall | Accuracy | 혼동행렬 `[TN, FP; FN, TP]` | 비고 |
+|---|---|---|---:|---:|---:|---:|---|---|
+| **Exp 0 (Baseline)** | `NTF-14` | `ko-sroberta` 코사인 유사도 (`title`, `thr=0.45`, 피드백 0건) | `0.6761` | `0.6857` | `0.6667` | `0.6933` | `[56, 22; 24, 48]` | Cold Start 기준선 (오분류 46건) |
+| **Exp 1 (Input/Thresh)** | `NTF-17` | 입력 `full`(카테고리·태그·제목·본문) + 부정 프로필 감점(`0.25`) + Val 튜닝 `thr=0.37` | `0.7853` | `0.7033` | `0.8889` | `0.7667` | `[51, 27; 8, 64]` | Baseline 대비 **+0.1092 F1** (FN `24 -> 8`) |
+| **Exp 2 (Rocchio)** | `NTF-18` | 소량 피드백 `n=50` Rocchio 벡터 보정 ($\alpha=0.25, \beta=0.1, \text{thr}=0.51$) | `0.7904` | `0.6947` | `0.9167` | `0.7667` | `[49, 29; 6, 66]` | 소량 피드백만으로 F1 추가 상승 (`+0.0051`) |
+| **Exp 3a (대조군)** | `NTF-19` | 누적 피드백(`n=729`) `TF-IDF + LogisticRegression` (`C=5.0, thr=0.50`) | `0.7746` | **`0.7857`** | `0.7639` | `0.7867` | `[63, 15; 17, 55]` | 강의 교안 대조군 (정밀도 우수, 동의어 Recall 한계) |
+| **Exp 3b (최고 성능)** | `NTF-19` | 누적 피드백(`n=729`) `ko-sroberta + LogisticRegression` (`C=2.0, thr=0.35`) | **`0.8250`** | `0.7500` | **`0.9167`** | **`0.8133`** | `[56, 22; 6, 66]` | TF-IDF 대비 **+0.0504 F1**, Baseline 대비 **+0.1489 F1** |
+| **Exp 4a (KURE Cold)** | `NTF-20` | `nlpai-lab/KURE-v1` (1024d) 코사인 유사도 (`full`, `thr=0.51`) | `0.7665` | `0.6737` | `0.8889` | `0.7400` | `[47, 31; 8, 64]` | Baseline 대비 크게 향상되나 `ko-sroberta` 대비 FP 다수 |
+| **Exp 4b (KURE Rocchio)** | `NTF-20` | `KURE-v1` 소량 피드백 `n=50` Rocchio ($\alpha=1.0, \beta=0.5, \text{thr}=0.53$) | `0.7561` | `0.6739` | `0.8611` | `0.7333` | `[48, 30; 10, 62]` | 고차원(1024d) 소량 평균 벡터 분산 영향 |
+| **Exp 4c (KURE ML)** | `NTF-20` | 누적 피드백(`n=729`) `KURE-v1 + LogisticRegression` (`C=0.5, thr=0.40`) | `0.8125` | `0.7386` | `0.9028` | `0.8000` | `[55, 23; 7, 65]` | TF-IDF(`0.7746`)는 상회하나 768d `ko-sroberta` 대비 소폭 열세 |
+
+### 피드백 누적 규모별 학습 곡선 (`Learning Curve`, Hold-out Test `n=150`)
+
+| 모델 | n=20 (F1) | n=50 (F1) | n=100 (F1) | n=200 (F1) | n=400 (F1) | n=729 (F1) | 핵심 인사이트 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `TF-IDF + LogReg` | **0.7815** | **0.7571** | 0.7770 | 0.8056 | 0.7801 | 0.7746 | 초반 어휘 매칭은 안정적이나 ~0.78 부근에서 일찍 포화 |
+| `ko-sroberta + LogReg` | 0.6961 | 0.7403 | **0.7784** | **0.8323** | **0.8428** | **0.8250** | `n>=100`부터 TF-IDF 추월, `n=400`에서 0.8428 도달 |
+| `KURE-v1 + LogReg` | 0.6486 | 0.6606 | 0.7232 | 0.7929 | 0.8050 | 0.8125 | 1024d 차원 특성상 극소량(`n<=50`)에서 과적합, 데이터 누적 시 빠른 수렴 |
+
+> **최신 모델 비교 결론**: `KURE-v1`은 파라미터·임베딩 차원(1024d)이 더 크고 장문 처리에 강점이 있으나, 본 과제 데이터(짧은 채용 제목 위주, 72.7% 본문 부재)와 제한된 피드백 규모(`n<=729`)에서는 768d `ko-sroberta` 선형 분류기가 오히려 더 적은 분산으로 높은 F1(`0.8250` vs `0.8125`)을 기록했습니다. 이는 **무조건 큰 최신 모델보다 태스크 입력 길이와 데이터 규모에 맞는 임베딩 선택이 중요함**을 실증한 결과입니다.
 
 ---
 
 ## 3. 오류 분석 (Error Analysis — Jira `버그` 티켓 연동)
 
-Baseline(Exp 0) 실행 후 오분류(FP/FN) 사례를 최소 3건 이상 실제 문장 단위로 분석해 아래 표와 Jira `버그` 티켓에 기록한다.
+Baseline(`Exp 0`)의 오분류 `46건`(`FP 22건`, `FN 24건`)과 요약 실행 결과를 실제 공지 원문 단위로 분석해 Jira `버그` 티켓으로 발행하고 개선 실험에 연결했습니다.
 
-| Jira Bug Key | 오류 유형 (FP/FN) | 공지 원문 (ID / 제목) | 모델 예측 vs 정답 | 원인 분석 | 연결된 개선 실험 |
+| Jira Bug Key | 오류 유형 | 실제 공지 사례 (ID / 제목) | 모델 예측 vs Human Gold | 원인 분석 | 연결된 개선 실험 / 조치 |
 |---|---|---|---|---|---|
-| `(TBD)` | `FP` 또는 `FN` | `(실제 오분류 문장 기록)` | `(TBD)` | `(TBD)` | `(TBD)` |
+| **`NTF-21`** | `FP` (표면 키워드 오탐지) | `swcon_academic_560563`: `공통 [안내] 2027학년도 1학기 일반대학원 3개 소관학과(스마트도시·부동산학과, 빅데이터응용학과...) 연계과정 선발 안내`<br>`swcon_career_543155`: `[미래인재센터(국제)] 2026학년도 하계방학 「스포츠 분야별 취업 정보 파헤치기」`<br>`goodjob_general_52417`: `[뱅크샐러드금융서비스] [AI-Native Sales] 금융 솔루션 전문가 채용` | `0.6407 -> 1` (정답 `0`)<br>`0.5987 -> 1` (정답 `0`)<br>`0.4885 -> 1` (정답 `0`) | Positive 단일 유사도는 `빅데이터`, `취업`, `AI` 등 표면 어휘만 보고 일반대학원·스포츠·세일즈 비대상 공지를 통과시킴 | `NTF-17` (부정 프로필 감점)<br>`NTF-19` (`LogReg` 가중치 학습으로 `Exp 3a` FP `15` / `Exp 3b` `F1=0.8250` 달성) |
+| **`NTF-22`** | `FN` (복지/주거/학사 미탐지) | `youth_api_20261030005400214653`: `전세보증금반환보증 보증료 지원`<br>`seongnam_youth_biz_275`: `2026년 하반기 취업청년 전ㆍ월세 지원사업`<br>`swcon_academic_551613`: `공통 [안내] 2026학년도 2학기 학점포기 신청` | `0.3036 -> 0` (정답 `1`)<br>`0.3585 -> 0` (정답 `1`)<br>`0.3738 -> 0` (정답 `1`) | `title`만 입력하면 `성남시/경기도` 지역·`주거/학사` 카테고리·지원 내용 본문이 빠져 Recall(`0.6667`)이 하락 | `NTF-17` (`full` 입력 + 임계값 0.37 → Recall `0.8889`, FN `24 -> 8`)<br>`NTF-18` (Rocchio → FN `6`) |
+| **`NTF-23`** | `데이터 병목` (절단/본문 부재) | `goodjob_recommend_2157`: `[피보탈시스템즈코리아(주)] 반도체 엔지니어&오퍼레이터…`<br>`goodjob_recommend_2174`: `[주성엔지니어링] 신입 Engineer(R&D, C/S…`<br>`goodjob_extracurricular_3707`: `[국제] 2026년 상반기 대기업 지원 집중케어 1Day 자기소…` | `0.4920 -> 1` (정답 `0`)<br>`0.4843 -> 1` (정답 `0`)<br>`0.3650 -> 0` (정답 `1`) | Test 150건 중 제목 말줄임표(`…`) 절단 **27건(18.0%)**, 본문 부재(`content=""`) **109건(72.7%)**이며, Exp 0 오분류 46건 중 절단 **12건(26.1%)**, 본문 부재 **34건(73.9%)** 집중 | ADR-02 비로그인 수집 정책 한계. Discord 카드 `원문 보기` 버튼 제공 및 향후 규칙 기반 지역/직무 Hard Filter + Soft Filter 하이브리드 구조 제안 |
+| **`NTF-24`** | `요약 품질` (서류 편향/미분리) | `swcon_academic_545063`: `2026-2학기 문숙장학재단 신규장학생`<br>`seongnam_youth_biz_270`: `제16회 성남시청소년·청년 정책 제안대회` | 제출서류(`4) 성적증명서 1부... 5) 건강보험료...`) 추출 / `❍` 개조식 1,000자+ 통째 출력 | 행정 서류 문장 간 단어 반복(`1부`, `부모`, `건강보험`)으로 TF-IDF PageRank 중심도가 과대평가되며 마침표 없는 개조식 분리 실패 | `PreprocessedTextRankSummarizer` 구현 완료(`e59d2c6`): 개조식·섹션 구조 분리, 제출서류/문의처 보일러플레이트 필터링 + 도입부·핵심키워드 가중치 |
+
+### Human Gold 채점 과정의 데이터 레벨 인사이트 (향후 실서비스 개선 과제)
+1. **제목 말줄임표(`…`) 절단 및 정보 병목**: `goodjob` 추천채용/비교과 게시판은 HTML 목록 단계에서 긴 제목이 잘리고 비로그인 정책(ADR-02)상 본문 수집이 불가해, 사람조차 원문 링크를 열지 않으면 직무·대상을 판별하기 어려운 경우가 발생함.
+2. **타지역/타분야 분포와 하이브리드 아키텍처**: 전국 정책(`youth_api`) 및 전 학과 채용(`goodjob`) 특성상 대구·전남·광주 등 타지역 공지와 스포츠·세일즈·회계·마케팅 직무가 다수 유입됨. 실서비스에서는 **명확한 타지역 코드·제외 직무는 1차 규칙 기반 Hard Filter로 선제 제거**하고, **모호한 융합 직무·학사 판별에만 임베딩 Soft Filter를 집중**하는 2단계 파이프라인이 유리함.
 
 ---
 
-## 4. 추출 요약(`TextRank`) 한국어 `ROUGE` 평가 (Summary Eval Set, n=20)
+## 4. 추출 요약(`TextRank`) 한국어 `ROUGE` 평가 (`Summary Eval Set`, `n=20`)
 
-> **주의**: `rouge_score` 기본 토크나이저는 ASCII 영숫자만 남겨 한글 토큰이 소실되므로, 공백 기준 및 `KoNLPy Okt` 형태소 기준 커스텀 토크나이저로 측정한다.
+> **주의**: `rouge_score` 기본 토크나이저는 ASCII 영숫자만 남겨 한글 토큰이 소실되므로, 공백 기준(`space`) 및 `KoNLPy Okt` 형태소 기준 커스텀 토크나이저로 `Raw TextRank` vs `Preprocessed TextRank`를 1:1 비교한다.
 
-| 요약 방식 | 토크나이저 | ROUGE-1 (F1) | ROUGE-L (F1) | 비고 |
-|---|---|---:|---:|---|
-| `TextRank` (top_k=3) | 공백 기준 (`space`) | `(TBD)` | `(TBD)` | 어절 일치율 |
-| `TextRank` (top_k=3) | 형태소 기준 (`okt`) | `(TBD)` | `(TBD)` | 조사 분리 실질 일치율 |
+| 요약 방식 | 토크나이저 | ROUGE-1 (F1) | ROUGE-L (F1) | 개선 폭 (vs Raw) | 비고 |
+|---|---|---:|---:|---:|---|
+| `TextRank` (Raw Baseline) | 공백 기준 (`space`) | `0.3593` | `0.3482` | - | 어절 일치율 |
+| `TextRank` (Raw Baseline) | 형태소 기준 (`okt`) | `0.4232` | `0.3802` | - | 조사 분리 실질 일치율 |
+| **`PreprocessedTextRank`** (`e59d2c6`) | 공백 기준 (`space`) | **`0.3873`** | **`0.3808`** | **`+0.0280 / +0.0326`** | 개조식(`■/❍/1)`) 분리 + 서류/URL 보일러플레이트 제거 |
+| **`PreprocessedTextRank`** (`e59d2c6`) | 형태소 기준 (`okt`) | **`0.4494`** | **`0.4173`** | **`+0.0262 / +0.0370`** | 도입부 + 지원내용·일정 키워드 가중치 |
+
+### 요약 정성 비교 (`results/summary_eval_comparison.csv`)
+- **개조식 분리 및 보일러플레이트 정제**: `seongnam_youth_biz_283`·`seongnam_youth_biz_247` 등 URL/이메일/별표(`***`) 및 마침표 없는 개조식 목록에서 Raw TextRank는 긴 본문 뭉치나 신청 폼 URL을 그대로 포함했으나, `PreprocessedTextRank`는 URL·이메일·제출서류 체크리스트를 걸러내고 핵심 사업 소개·시상/교육 개요 문장을 선별해 **Okt ROUGE-L +0.0370** 향상을 달성했습니다.

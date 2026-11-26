@@ -1,0 +1,316 @@
+{
+  "judge_agreement_on_test150": {
+    "accuracy": 0.84,
+    "cohen_kappa": 0.6784565916398714
+  },
+  "test_results": [
+    {
+      "exp": "Exp 0: Baseline (ko-sroberta title@0.45)",
+      "threshold": 0.45,
+      "accuracy": 0.6933333333333334,
+      "precision": 0.6857142857142857,
+      "recall": 0.6666666666666666,
+      "f1": 0.676056338028169,
+      "confusion_matrix": [
+        [
+          56,
+          22
+        ],
+        [
+          24,
+          48
+        ]
+      ]
+    },
+    {
+      "exp": "Exp 1: Input/Thresh (full)",
+      "threshold": 0.37,
+      "accuracy": 0.7666666666666667,
+      "precision": 0.7032967032967034,
+      "recall": 0.8888888888888888,
+      "f1": 0.7852760736196319,
+      "confusion_matrix": [
+        [
+          51,
+          27
+        ],
+        [
+          8,
+          64
+        ]
+      ]
+    },
+    {
+      "exp": "Exp 2: Rocchio (ko-sroberta, n=50)",
+      "threshold": 0.51,
+      "accuracy": 0.7666666666666667,
+      "precision": 0.6947368421052632,
+      "recall": 0.9166666666666666,
+      "f1": 0.7904191616766467,
+      "confusion_matrix": [
+        [
+          49,
+          29
+        ],
+        [
+          6,
+          66
+        ]
+      ]
+    },
+    {
+      "exp": "Exp 3a: TF-IDF + LogReg (Control)",
+      "threshold": 0.5,
+      "accuracy": 0.7866666666666666,
+      "precision": 0.7857142857142857,
+      "recall": 0.7638888888888888,
+      "f1": 0.7746478873239436,
+      "confusion_matrix": [
+        [
+          63,
+          15
+        ],
+        [
+          17,
+          55
+        ]
+      ]
+    },
+    {
+      "exp": "Exp 3b: ko-sroberta + LogReg (n=729)",
+      "threshold": 0.35,
+      "accuracy": 0.8133333333333334,
+      "precision": 0.75,
+      "recall": 0.9166666666666666,
+      "f1": 0.825,
+      "confusion_matrix": [
+        [
+          56,
+          22
+        ],
+        [
+          6,
+          66
+        ]
+      ]
+    },
+    {
+      "exp": "Exp 4a: KURE-v1 Cosine",
+      "threshold": 0.51,
+      "accuracy": 0.74,
+      "precision": 0.6736842105263158,
+      "recall": 0.8888888888888888,
+      "f1": 0.7664670658682635,
+      "confusion_matrix": [
+        [
+          47,
+          31
+        ],
+        [
+          8,
+          64
+        ]
+      ]
+    },
+    {
+      "exp": "Exp 4b: KURE-v1 Rocchio (n=50)",
+      "threshold": 0.53,
+      "accuracy": 0.7333333333333333,
+      "precision": 0.6739130434782609,
+      "recall": 0.8611111111111112,
+      "f1": 0.7560975609756098,
+      "confusion_matrix": [
+        [
+          48,
+          30
+        ],
+        [
+          10,
+          62
+        ]
+      ]
+    },
+    {
+      "exp": "Exp 4c: KURE-v1 + LogReg (n=729)",
+      "threshold": 0.4,
+      "accuracy": 0.8,
+      "precision": 0.7386363636363636,
+      "recall": 0.9027777777777778,
+      "f1": 0.8125,
+      "confusion_matrix": [
+        [
+          55,
+          23
+        ],
+        [
+          7,
+          65
+        ]
+      ]
+    }
+  ],
+  "best_experiment": {
+    "exp": "Exp 3b: ko-sroberta + LogReg (n=729)",
+    "threshold": 0.35,
+    "accuracy": 0.8133333333333334,
+    "precision": 0.75,
+    "recall": 0.9166666666666666,
+    "f1": 0.825,
+    "confusion_matrix": [
+      [
+        56,
+        22
+      ],
+      [
+        6,
+        66
+      ]
+    ]
+  },
+  "exp0_error_count": 46,
+  "learning_curve": [
+    {
+      "n_feedback": 20,
+      "model": "TF-IDF + LogReg",
+      "f1": 0.7814569536423841,
+      "accuracy": 0.78
+    },
+    {
+      "n_feedback": 20,
+      "model": "ko-sroberta + LogReg",
+      "f1": 0.696078431372549,
+      "accuracy": 0.5866666666666667
+    },
+    {
+      "n_feedback": 20,
+      "model": "KURE-v1 + LogReg",
+      "f1": 0.6486486486486487,
+      "accuracy": 0.48
+    },
+    {
+      "n_feedback": 50,
+      "model": "TF-IDF + LogReg",
+      "f1": 0.7571428571428571,
+      "accuracy": 0.7733333333333333
+    },
+    {
+      "n_feedback": 50,
+      "model": "ko-sroberta + LogReg",
+      "f1": 0.7403314917127072,
+      "accuracy": 0.6866666666666666
+    },
+    {
+      "n_feedback": 50,
+      "model": "KURE-v1 + LogReg",
+      "f1": 0.6605504587155964,
+      "accuracy": 0.5066666666666667
+    },
+    {
+      "n_feedback": 100,
+      "model": "TF-IDF + LogReg",
+      "f1": 0.7769784172661871,
+      "accuracy": 0.7933333333333333
+    },
+    {
+      "n_feedback": 100,
+      "model": "ko-sroberta + LogReg",
+      "f1": 0.7784431137724551,
+      "accuracy": 0.7533333333333333
+    },
+    {
+      "n_feedback": 100,
+      "model": "KURE-v1 + LogReg",
+      "f1": 0.7231638418079096,
+      "accuracy": 0.6733333333333333
+    },
+    {
+      "n_feedback": 200,
+      "model": "TF-IDF + LogReg",
+      "f1": 0.8055555555555556,
+      "accuracy": 0.8133333333333334
+    },
+    {
+      "n_feedback": 200,
+      "model": "ko-sroberta + LogReg",
+      "f1": 0.8322981366459627,
+      "accuracy": 0.82
+    },
+    {
+      "n_feedback": 200,
+      "model": "KURE-v1 + LogReg",
+      "f1": 0.7928994082840237,
+      "accuracy": 0.7666666666666667
+    },
+    {
+      "n_feedback": 400,
+      "model": "TF-IDF + LogReg",
+      "f1": 0.7801418439716312,
+      "accuracy": 0.7933333333333333
+    },
+    {
+      "n_feedback": 400,
+      "model": "ko-sroberta + LogReg",
+      "f1": 0.8427672955974843,
+      "accuracy": 0.8333333333333334
+    },
+    {
+      "n_feedback": 400,
+      "model": "KURE-v1 + LogReg",
+      "f1": 0.8050314465408805,
+      "accuracy": 0.7933333333333333
+    },
+    {
+      "n_feedback": 729,
+      "model": "TF-IDF + LogReg",
+      "f1": 0.7746478873239436,
+      "accuracy": 0.7866666666666666
+    },
+    {
+      "n_feedback": 729,
+      "model": "ko-sroberta + LogReg",
+      "f1": 0.825,
+      "accuracy": 0.8133333333333334
+    },
+    {
+      "n_feedback": 729,
+      "model": "KURE-v1 + LogReg",
+      "f1": 0.8125,
+      "accuracy": 0.8
+    }
+  ],
+  "rouge_eval": {
+    "count": 20,
+    "space": {
+      "rouge1": 0.387309687711691,
+      "rougeL": 0.38081260159866287
+    },
+    "okt": {
+      "rouge1": 0.4493683281514908,
+      "rougeL": 0.41728072908078107
+    },
+    "raw_textrank": {
+      "space": {
+        "rouge1": 0.35933955481544994,
+        "rougeL": 0.3481770117572433
+      },
+      "okt": {
+        "rouge1": 0.42320559964110993,
+        "rougeL": 0.3802425416624081
+      }
+    },
+    "preprocessed_textrank": {
+      "space": {
+        "rouge1": 0.387309687711691,
+        "rougeL": 0.38081260159866287
+      },
+      "okt": {
+        "rouge1": 0.4493683281514908,
+        "rougeL": 0.41728072908078107
+      }
+    },
+    "delta_space_rouge_1": 0.028,
+    "delta_space_rouge_l": 0.0326,
+    "delta_okt_rouge_1": 0.0262,
+    "delta_okt_rouge_l": 0.037
+  }
+}
