@@ -16,7 +16,7 @@ flowchart LR
     E -->|feedback.csv| C
 ```
 
-### 왜 단순 LLM 전수 호출 대신 경량 NLP 파이프라인을 쓰나요?
+### 설계 배경: 경량 NLP 파이프라인 채택 이유
 - **비용·속도·독립성**: 오프라인 학습 데이터 초기 라벨링(Silver) 단계에서만 LLM Judge(`claude-haiku-4-5-20251001`)를 활용하고, 매일 돌아가는 추론·요약·재학습 서버는 오픈소스 경량 임베딩(`ko-sroberta-multitask`)과 `LogisticRegression`·`TextRank`로 API 비용 없이 자체 운영합니다.
 - **환각(Hallucination) 없는 요약**: 생성형 요약 대신 임베딩 기반 추출 요약 + 규칙 기반 슬롯 추출을 결합해 마감일·지원금액·장소 숫자 왜곡을 방지하고, 추론 직후 모델을 메모리에서 해제(`unload()`)합니다.
 
@@ -59,7 +59,7 @@ flowchart LR
 
 ## 3. 정량 검증 결과 (`Hold-out Human Gold`)
 
-Validation Set(`val.csv`, `n=100`) 단독 튜닝 후 잠금 설정(`results/val_tuned_config.json`)을 **사람이 직접 채점한 Hold-out Test (`n=150`)** 및 **요약 참조 정답 (`n=20`)**에 1회 평가한 결과입니다.  
+Validation Set(`val.csv`, `n=100`)에서 단독 튜닝으로 고정한 설정(`results/val_tuned_config.json`)을 **사람이 직접 채점한 Hold-out Test (`n=150`)** 및 **요약 참조 정답 (`n=20`)**에 1회 평가한 결과입니다.  
 *(참고: LLM Judge vs Human Gold 일치율 `n=150`: Accuracy `0.8400` / Cohen's Kappa `0.6785`)*
 
 | 태스크 | 모델 / 실험 단계 | 핵심 지표 | 비고 |
@@ -74,14 +74,14 @@ Validation Set(`val.csv`, `n=100`) 단독 튜닝 후 잠금 설정(`results/val_
 | 추출 요약 (`n=20`) | `PreprocessedTextRank` | Okt R1 `0.4246` / RL `0.3789` | 세분화 분절 시 TF-IDF 희소화 확인 |
 | 추출 요약 (`n=20`) | **`SemanticMMRTextRankSummarizer`** | **Okt R1 `0.5221` / RL `0.5040`** | **공백 ROUGE-L `0.4638` (`+0.1238` Okt), 슬롯 `20/20`** |
 
-> 본 데이터셋은 공개 목록 특성상 **72.7%가 본문 없는 짧은 제목 위주(`n=729`)**이므로, 단일 `seed=42` 통제 비교에서 768d `ko-sroberta + LogReg`(`0.8250`)가 1024d `KURE-v1 + LogReg`(`0.8125`)를 소폭 상회해 실운영 기본 모델로 채택했습니다.
+> 본 데이터셋은 공개 목록 특성상 **Test 기준 72.7%가 본문 없는 짧은 제목 위주(학습 `n=729`)**이므로, 단일 `seed=42` 통제 비교에서 768d `ko-sroberta + LogReg`(`0.8250`)가 1024d `KURE-v1 + LogReg`(`0.8125`)를 소폭 상회해 실운영 기본 모델로 채택했습니다.
 
 <p align="center">
   <img src="results/figures/06_experiment_f1_comparison.png" width="49%" alt="Experiment F1 Comparison" />
   <img src="results/figures/09_summary_rouge_comparison.png" width="49%" alt="Summary ROUGE Comparison" />
 </p>
 
-상세 학습 곡선, 소스별 오류 분석 및 제3자 코드 감사 결함 수정 내역은 [실험 및 오류 분석 리포트](docs/04_Experiment_and_Error_Report.md)에서 확인할 수 있습니다.
+상세 학습 곡선, 소스별 오류 분석 및 주요 결함 수정 내역은 [실험 및 오류 분석 리포트](docs/04_Experiment_and_Error_Report.md)에서 확인할 수 있습니다.
 
 ---
 
@@ -181,7 +181,7 @@ Linux 서버(`systemd --user`) 상시 배포 절차는 [deploy/ORACLE_DEPLOY.md]
 - **보안 및 크롤링 윤리 (ADR-02)**:
   - 각 사이트 `robots.txt`를 점검하고, **로그인이 필요한 교내 인트라넷 크롤링 및 개인 계정(`.env`) 자동 로그인은 일절 수행하지 않습니다.**
   - 모든 API 키·봇 토큰·런타임 피드백(`feedback.csv`)·발송 상태(`sent_notices.json`)는 `.gitignore`로 Git 추적에서 제외됩니다.
-- **알려진 한계 및 향후 고도화 (Backlog)**:
-  - **제목 절단·본문 부재 병목 (`NTF-23`)**: `goodjob` 공개 목록의 제목 말줄임(`…`, Test 18.0%) 및 본문 미수집(ADR-02) 구간은 `🔗 원문 보기` 버튼으로 보완 중이며, 향후 OCR/VLM 포스터 파싱 확장이 가능합니다.
-  - **표면 키워드 잔여 오탐지 (`NTF-21`)**: `일반대학원`·비IT 대기업 공고 등 경계 FP 억제를 위해 1차 **규칙 기반 Hard Filter** + 2차 **임베딩 Soft Filter** 하이브리드 구조로 확장 예정입니다.
+- **알려진 한계 및 향후 고도화**:
+  - **제목 절단·본문 부재 병목**: `goodjob` 공개 목록의 제목 말줄임(`…`, Test 18.0%) 및 본문 미수집(ADR-02) 구간은 `🔗 원문 보기` 버튼으로 보완 중이며, 향후 OCR/VLM 포스터 파싱 확장이 가능합니다.
+  - **표면 키워드 잔여 오탐지**: `일반대학원`·비IT 대기업 공고 등 경계 FP 억제를 위해 1차 **규칙 기반 Hard Filter** + 2차 **임베딩 Soft Filter** 하이브리드 구조로 확장 예정입니다.
   - **교차 재게시 그룹 분할**: 원 게시판 재게시로 `full` 입력이 일치하는 `6/150건(4.0%)`에 대해 향후 텍스트 해시 기반 그룹 분할을 적용할 예정입니다.
