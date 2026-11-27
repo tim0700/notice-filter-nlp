@@ -36,24 +36,45 @@ flowchart LR
 4. **Core ↔ Adapter 분리 & 24/7 상시 데몬 ([src/adapters/discord/](src/adapters/discord/), [scripts/run_alert_pipeline.py](scripts/run_alert_pipeline.py))**
    - NLP 코어는 외부 I/O와 완전히 분리되어 오프라인 단위 테스트(53건)와 CPU 노트북 단독 재현을 보장하며, 실운영 데몬은 `관심 👍 / 제외 👎` 버튼 클릭을 `data/feedback.csv`에 즉시 기록해 다음 주기에 가중치(`3x`) 재학습합니다.
 
+### Discord 알림 카드 예시
+```text
+🏛️ 성남청년다해 · 청년정책
+2026 청년의 시간 참가팀 모집
+• 「청년의 시간(청년 참여형 정책 포럼)」 참가팀을 모집합니다.
+• 모집대상 : 성남시 거주·재직·재학·활동 청년(19~39세) 3~6명으로 구성된 팀
+• ② 참가 신청서 및 사업(프로그램) 제안서 작성
+🏷️ `성남시` `청년정책`
+
+📌 출처: 🏛️ 성남청년다해   |   🎯 적합도: 🟢 89% (높음)   |   ⏰ 마감일: 2026-11-22 (D-5)
+📋 핵심 정보
+📅 일정/기한: 10.30 ~ 11.22
+👥 대상: 성남시 거주·재직·재학·활동 청년(19~39세) 3~6명
+💰 지원/혜택: 총 시상금 400만 원
+📍 장소: 판교유스센터
+
+[ 관심 👍 ]   [ 제외 👎 ]   [ 🔗 원문 보기 ]
+```
+
 ---
 
 ## 3. 정량 검증 결과 (`Hold-out Human Gold`)
 
-Validation Set(`val.csv`, `n=100`) 단독 튜닝 후 잠금 설정을 **사람이 직접 채점한 Hold-out Test (`n=150`)** 및 **요약 참조 정답 (`n=20`)**에 1회 평가한 결과입니다.  
+Validation Set(`val.csv`, `n=100`) 단독 튜닝 후 잠금 설정(`results/val_tuned_config.json`)을 **사람이 직접 채점한 Hold-out Test (`n=150`)** 및 **요약 참조 정답 (`n=20`)**에 1회 평가한 결과입니다.  
 *(참고: LLM Judge vs Human Gold 일치율 `n=150`: Accuracy `0.8400` / Cohen's Kappa `0.6785`)*
 
 | 태스크 | 모델 / 실험 단계 | 핵심 지표 | 비고 |
 |---|---|---:|---|
-| 공지 선별 (`n=150`) | `Exp 0` Baseline (`ko-sroberta title@0.45`) | F1 `0.6761` / Acc `0.6933` | Cold-Start 기준선 |
+| 공지 선별 (`n=150`) | `Exp 0` Baseline (`ko-sroberta title@0.45`) | F1 `0.6761` / Acc `0.6933` | Cold-Start 기준선 (`P=0.6857, R=0.6667`) |
 | 공지 선별 (`n=150`) | `Exp 1` (`full` + 부정 감점 + `thr=0.37`) | F1 `0.7853` / Acc `0.7667` | Baseline 대비 `+0.1092 F1` |
-| 공지 선별 (`n=150`) | `Exp 2` (`Rocchio n=50`, `thr=0.51`) | F1 `0.7904` / Acc `0.7667` | 소량 피드백 보정 |
-| 공지 선별 (`n=150`) | `Exp 3a` (`TF-IDF + LogReg`, 대조군) | F1 `0.7746` / Acc `0.7867` | 어휘 기반 선형 분류기 |
-| 공지 선별 (`n=150`) | **`Exp 3b` (`ko-sroberta + LogReg`)** | **F1 `0.8250` / Acc `0.8133`** | **최종 채택 (`R=0.9167`, `+0.1489 F1`)** |
-| 공지 선별 (`n=150`) | `Exp 4c` (`KURE-v1 + LogReg`) | F1 `0.8125` / Acc `0.8000` | 1024d 최신 임베딩 통제 비교군 |
+| 공지 선별 (`n=150`) | `Exp 2` (`Rocchio n=50`, `thr=0.51`) | F1 `0.7904` / Acc `0.7667` | 소량 피드백 보정 (`R=0.9167`) |
+| 공지 선별 (`n=150`) | `Exp 3a` (`TF-IDF + LogReg`, 대조군) | F1 `0.7746` / Acc `0.7867` | 어휘 기반 선형 분류기 (`P=0.7857`) |
+| 공지 선별 (`n=150`) | **`Exp 3b` (`ko-sroberta + LogReg`)** | **F1 `0.8250` / Acc `0.8133`** | **최종 채택 (`P=0.7500, R=0.9167`, `+0.1489 F1`)** |
+| 공지 선별 (`n=150`) | `Exp 4c` (`KURE-v1 + LogReg`) | F1 `0.8125` / Acc `0.8000` | 1024d 최신 임베딩 통제 비교군 (`McNemar p=0.7266`) |
 | 추출 요약 (`n=20`) | `TextRank` (Raw Baseline) | Okt R1 `0.4232` / RL `0.3802` | 공백 ROUGE-L `0.3482` |
-| 추출 요약 (`n=20`) | `PreprocessedTextRank` | Okt R1 `0.4246` / RL `0.3789` | 구조 분절 시 TF-IDF 희소화 확인 |
+| 추출 요약 (`n=20`) | `PreprocessedTextRank` | Okt R1 `0.4246` / RL `0.3789` | 세분화 분절 시 TF-IDF 희소화 확인 |
 | 추출 요약 (`n=20`) | **`SemanticMMRTextRankSummarizer`** | **Okt R1 `0.5221` / RL `0.5040`** | **공백 ROUGE-L `0.4638` (`+0.1238` Okt), 슬롯 `20/20`** |
+
+> 본 데이터셋은 공개 목록 특성상 **72.7%가 본문 없는 짧은 제목 위주(`n=729`)**이므로, 단일 `seed=42` 통제 비교에서 768d `ko-sroberta + LogReg`(`0.8250`)가 1024d `KURE-v1 + LogReg`(`0.8125`)를 소폭 상회해 실운영 기본 모델로 채택했습니다.
 
 <p align="center">
   <img src="results/figures/06_experiment_f1_comparison.png" width="49%" alt="Experiment F1 Comparison" />
@@ -71,7 +92,7 @@ notice-filter-nlp/
 ├── config/
 │   └── profile.yaml              # 예시 사용자 프로필·관심/제외 쿼리·Judge Rubric (커스터마이징 가능)
 ├── data/
-│   ├── sample_notices.csv        # 9컬럼 Canonical Schema 샘플 20건 (계약 테스트용)
+│   ├── sample_notices.csv        # 9컬럼 Canonical Schema 샘플 20건 (계약 테스트·오프라인 시연용)
 │   ├── raw_notices.csv           # 수집·정규화 통합 공지 979건
 │   ├── silver_labels.csv         # LLM Judge Silver 라벨 979건
 │   └── splits/                   # 누수 방지 3-way 분할 (train / val / test_gold / summary_eval_gold)
@@ -107,7 +128,7 @@ pip install -r requirements.txt
 # pip install torch --index-url https://download.pytorch.org/whl/cu124
 ```
 - `KoNLPy Okt` 형태소 분석·ROUGE 평가를 위해 JDK 17(Temurin 등)이 필요합니다.
-- 오프라인 단위 테스트 실행:
+- 오프라인 단위 테스트 실행 (53건):
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -v
 ```
@@ -117,29 +138,41 @@ pip install -r requirements.txt
 ```bash
 pip install -r deploy/requirements-serve.txt
 cp .env.example .env
-# .env에 DISCORD_BOT_TOKEN, DISCORD_CHANNEL_ID, (선택) YOUTH_POLICY_API_KEY 입력
+# .env에 DISCORD_BOT_TOKEN, DISCORD_CHANNEL_ID, (선택) YOUTH_POLICY_API_KEY / YOUTH_CONTENT_API_KEY 입력
 ```
 
 ### ③ 프로필 커스터마이징 및 실행
 1. [config/profile.yaml](config/profile.yaml)의 `user`, `interests.positive_queries`, `negative_queries`를 본인 전공·관심 직무·거주 지역에 맞게 수정합니다. (현재 저장소에는 **소프트웨어 전공 대학생 · 성남시 청년 정책** 기준 예시 프로필이 포함되어 있습니다.)
-2. 기존 공지 시딩 후 1회 드라이런 또는 24/7 데몬 실행:
+2. 오프라인 샘플 드라이런 → 실수집 시딩 → 24/7 데몬 실행:
 ```powershell
-# 기존 수집 공지 중복 발송 방지 시딩
-.\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --seed-seen-from data/raw_notices.csv
+# (A) 외부 크롤링·Discord 토큰 없이 즉시 오프라인 드라이런 확인
+.\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --once --input-csv data/sample_notices.csv --max-alerts-per-run 3
 
-# 1회 드라이런 (수집 -> 분류 -> SemanticMMR 요약 + 슬롯 -> 콘솔 확인)
+# (B) 기존 수집 공지(979건) 중복 발송 방지 시딩 후 실수집 드라이런
+.\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --seed-seen-from data/raw_notices.csv
 .\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --once
 
-# 24/7 상시 봇 데몬 (매일 09:00 KST 자동 수집·알림 + 상시 👍/👎 버튼 피드백 저장)
-.\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --daemon --daily-at 09:00
+# (C) 24/7 상시 봇 데몬 (매일 09:00 KST 자동 수집·알림 + 상시 👍/👎 버튼 피드백 저장)
+.\.venv\Scripts\python.exe scripts\run_alert_pipeline.py --daemon --daily-at 09:00 --timezone Asia/Seoul
 ```
 Linux 서버(`systemd --user`) 상시 배포 절차는 [deploy/ORACLE_DEPLOY.md](deploy/ORACLE_DEPLOY.md)를 참고하세요.
 
+### ④ EDA · 정량 실험 · 노트북 재현
+```powershell
+# Train Pool 전용 EDA 및 WordCloud 차트 재생성
+.\.venv\Scripts\python.exe scripts\run_eda.py
+
+# Validation 단독 튜닝 및 Hold-out Human Gold 1회 평가
+.\.venv\Scripts\python.exe scripts\run_experiments.py --mode val-only
+.\.venv\Scripts\python.exe scripts\run_experiments.py --mode final-eval
+```
+전체 파이프라인은 CPU 전용 환경(`CUDA_VISIBLE_DEVICES="-1"`)에서 `Restart & Run All` 검증을 완료한 [notebooks/notice_filter_pipeline.ipynb](notebooks/notice_filter_pipeline.ipynb)로도 그대로 재현할 수 있습니다.
+
 ---
 
-## 6. 설계 문서 및 보안·크롤링 원칙
+## 6. 설계 문서 · 보안 원칙 · 한계 및 향후 과제
 
-- **설계 문서**:
+- **설계 및 검증 문서**:
   - [01. 요구사항 명세서 및 추적 매트릭스 (SRS/RTM)](docs/01_SRS_and_RTM.md)
   - [02. 시스템 아키텍처 및 인터페이스 계약](docs/02_Architecture_and_Contract.md)
   - [03. 아키텍처 의사결정 기록 (ADR-01~07)](docs/03_ADR.md)
@@ -148,3 +181,7 @@ Linux 서버(`systemd --user`) 상시 배포 절차는 [deploy/ORACLE_DEPLOY.md]
 - **보안 및 크롤링 윤리 (ADR-02)**:
   - 각 사이트 `robots.txt`를 점검하고, **로그인이 필요한 교내 인트라넷 크롤링 및 개인 계정(`.env`) 자동 로그인은 일절 수행하지 않습니다.**
   - 모든 API 키·봇 토큰·런타임 피드백(`feedback.csv`)·발송 상태(`sent_notices.json`)는 `.gitignore`로 Git 추적에서 제외됩니다.
+- **알려진 한계 및 향후 고도화 (Backlog)**:
+  - **제목 절단·본문 부재 병목 (`NTF-23`)**: `goodjob` 공개 목록의 제목 말줄임(`…`, Test 18.0%) 및 본문 미수집(ADR-02) 구간은 `🔗 원문 보기` 버튼으로 보완 중이며, 향후 OCR/VLM 포스터 파싱 확장이 가능합니다.
+  - **표면 키워드 잔여 오탐지 (`NTF-21`)**: `일반대학원`·비IT 대기업 공고 등 경계 FP 억제를 위해 1차 **규칙 기반 Hard Filter** + 2차 **임베딩 Soft Filter** 하이브리드 구조로 확장 예정입니다.
+  - **교차 재게시 그룹 분할**: 원 게시판 재게시로 `full` 입력이 일치하는 `6/150건(4.0%)`에 대해 향후 텍스트 해시 기반 그룹 분할을 적용할 예정입니다.

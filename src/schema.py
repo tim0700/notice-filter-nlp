@@ -63,7 +63,7 @@ def normalize_notices_df(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Missing canonical columns: {missing}")
     normalized = df[CANONICAL_COLUMNS].copy()
     for col in CANONICAL_COLUMNS:
-        normalized[col] = normalized[col].fillna("").astype(str)
+        normalized[col] = normalized[col].astype(object).fillna("").astype(str)
     return normalized
 
 

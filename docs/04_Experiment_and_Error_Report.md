@@ -136,12 +136,12 @@
 
 ### 3-4. Jira 오류 분석 `버그` 티켓 매핑 (`NTF-21` ~ `NTF-24`)
 
-| Jira Key | 오류 유형 | 실제 대표 사례 | 모델 예측 vs 정답 | 근본 원인 및 연결 조치 |
+| Jira Key | 오류 유형 (Jira 상태) | 실제 대표 사례 | 모델 예측 vs 정답 | 근본 원인 및 연결 조치 |
 |---|---|---|---|---|
-| **`NTF-21`** | `FP` (표면 키워드 오탐지) | `swcon_academic_560563` (일반대학원 연계과정)<br>`swcon_career_543155` (스포츠 취업특강)<br>`goodjob_general_52417` (`AI-Native Sales`) | `0.6407 -> 1` (`0`)<br>`0.5987 -> 1` (`0`)<br>`0.4885 -> 1` (`0`) | Positive 코사인 유사도의 부정 직무/과정 억제 한계 → `NTF-17`·`NTF-19` (`goodjob_recommend` FP 9→0 해소, 일반대학원 등 Hard Filter 규칙 보완 제안) |
-| **`NTF-22`** | `FN` (복지/주거/학사 미탐지) | `youth_api_20261030005400214653` (전세보증료 지원)<br>`seongnam_youth_biz_275` (취업청년 전·월세)<br>`swcon_academic_551613` (학점포기 신청) | `0.3036 -> 0` (`1`)<br>`0.3585 -> 0` (`1`)<br>`0.3738 -> 0` (`1`) | `title` 전용 입력에서 본문·지역·학사 카테고리 누락 → `NTF-17`/`18`/`19`로 전체 FN `24 -> 6` 감소 |
-| **`NTF-23`** | `데이터 병목` (절단/본문 부재) | `goodjob_recommend_2157` (`반도체 엔지니어&오퍼레이터…`)<br>`goodjob_recommend_2174` (`신입 Engineer(R&D, C/S…`) | `0.4920 -> 1` (`0`)<br>`0.4843 -> 1` (`0`) | Test 150건 중 제목 `…` 절단 **27건(18.0%)**, 본문 부재 **109건(72.7%)**; Exp 0 오분류 46건 중 절단 **12건(26.1%)**, 본문 부재 **34건(73.9%)** → Discord `원문 보기` 버튼 제공 및 2단계 Hard+Soft Filter 구조 제안 |
-| **`NTF-24`** | `요약 품질` (서류 편향/미분리, **완료**) | `swcon_academic_545063` (문숙장학재단)<br>`seongnam_youth_biz_270` (정책제안대회) | `4) 성적증명서 1부... 5) 건강보험료...` / `❍` 개조식 통째 출력 | 행정 서류 단어 반복 편향 및 마침표 없는 개조식 미분리 → `PreprocessedTextRankSummarizer` 구현 및 `6fb3359` 보완으로 **완료** |
+| **`NTF-21`** | `FP` 표면 키워드 오탐지 (**할 일 · 향후 과제**) | `swcon_academic_560563` (일반대학원 연계과정)<br>`swcon_career_543155` (스포츠 취업특강)<br>`goodjob_general_52417` (`AI-Native Sales`) | `0.6407 -> 1` (`0`)<br>`0.5987 -> 1` (`0`)<br>`0.4885 -> 1` (`0`) | Positive 코사인 유사도의 부정 직무/과정 억제 한계 → `NTF-17`·`NTF-19` (`goodjob_recommend` FP 9→0 해소, 일반대학원 등 Hard Filter 규칙 보완은 향후 과제로 유지) |
+| **`NTF-22`** | `FN` 복지/주거/학사 미탐지 (**완료**) | `youth_api_20261030005400214653` (전세보증료 지원)<br>`seongnam_youth_biz_275` (취업청년 전·월세)<br>`swcon_academic_551613` (학점포기 신청) | `0.3036 -> 0` (`1`)<br>`0.3585 -> 0` (`1`)<br>`0.3738 -> 0` (`1`) | `title` 전용 입력에서 본문·지역·학사 카테고리 누락 → `NTF-17`/`18`/`19`로 전체 FN `24 -> 6` 감소하여 **완료** |
+| **`NTF-23`** | `데이터 병목` 절단/본문 부재 (**할 일 · 향후 과제**) | `goodjob_recommend_2157` (`반도체 엔지니어&오퍼레이터…`)<br>`goodjob_recommend_2174` (`신입 Engineer(R&D, C/S…`) | `0.4920 -> 1` (`0`)<br>`0.4843 -> 1` (`0`) | Test 150건 중 제목 `…` 절단 **27건(18.0%)**, 본문 부재 **109건(72.7%)**; Exp 0 오분류 46건 중 절단 **12건(26.1%)**, 본문 부재 **34건(73.9%)** → Discord `원문 보기` 버튼 제공 및 2단계 Hard+Soft Filter 구조는 향후 과제로 유지 |
+| **`NTF-24`** | `요약 품질` 서류 편향/미분리 (**완료**) | `swcon_academic_545063` (문숙장학재단)<br>`seongnam_youth_biz_270` (정책제안대회) | `4) 성적증명서 1부... 5) 건강보험료...` / `❍` 개조식 통째 출력 | 행정 서류 단어 반복 편향 및 마침표 없는 개조식 미분리 → `PreprocessedTextRankSummarizer` 구현 및 `6fb3359` 보완(`NTF-29`에서 `SemanticMMRTextRank`로 추가 고도화)으로 **완료** |
 
 ---
 
@@ -183,4 +183,4 @@
 | **`NTF-26`** | `High` (`H4`) | `SeongnamYouthCollector._parse_business_item`에서 `p != target[:len(p)]` 조건 오류로 `target`(지원대상: 연령·거주지·취업 요건) 필드가 상시 유실 | `target not in desc` 조건으로 수정해 `target`과 `desc` 정상 결합 | `test_seongnam_preserves_target_and_youth_api_masks_key_in_logs` 통과 | **완료** |
 | **`NTF-27`** | `High` (`H5`) | `YouthApiCollector` 요청 실패 경고 로그에 예외 객체 전체를 출력해 URL 내 `apiKeyNm` 쿼리 문자열 노출 가능성 | `_mask_api_key()`로 `apiKeyNm=***` 치환 후 로깅 | `caplog` 기반 마스킹 회귀 테스트 통과 | **완료** |
 | **`NTF-28`** | `High` (`H6`) | Discord 배치 중간 발송 실패 시 기발송 ID가 `sent_notices.json`에 기록되지 않아 다음 주기에 중복 재발송되는 결함 | `send_batch(..., on_sent=...)` 및 데몬 `_dispatch_once`에서 **1건 성공 즉시 증분 저장**, 시작 시 스케줄 형식 선검증(`M5`) | `test_send_batch_partial_failure_preserves_already_sent_ids` + `pytest 50/50` 통과 + Oracle Cloud ARM64 데몬 재기동 | **완료** |
-| **`NTF-24`** *(보완)* | `High` (`H2`/`H3`) | ① `문의:`가 붙은 문장에서 앞의 일시·장소·대상까지 통째 삭제됨, ② 비보일러플레이트 문장이 `< top_k`일 때 서류 체크리스트 10건을 전부 복구함 | `_TRAILING_CONTACT_RE` 꼬리만 절단하고, 비보일러플레이트 `>= 1건` 시 서류 목록 복구 차단 | `test_models.py` H2/H3 회귀 테스트 + 20건 ROUGE 재산출(`okt ROUGE-L 0.4049`) | **완료** |
+| **`NTF-24`** *(보완)* | `High` (`H2`/`H3`) | ① `문의:`가 붙은 문장에서 앞의 일시·장소·대상까지 통째 삭제됨, ② 비보일러플레이트 문장이 `< top_k`일 때 서류 체크리스트 10건을 전부 복구함 | `_TRAILING_CONTACT_RE` 꼬리만 절단하고, 비보일러플레이트 `>= 1건` 시 서류 목록 복구 차단 | `test_models.py` H2/H3 회귀 테스트 통과 (`6fb3359` 당시 `Preprocessed` Okt RL `0.4049` → 이후 `NTF-29`에서 세분화 전처리·`SemanticMMRTextRank`로 전환해 최종 Okt RL `0.5040`) | **완료** |
